@@ -386,15 +386,86 @@ def _render_event_row(event, course_map: dict, today: date, courses: list) -> No
     st.divider()
 
 
+# ─── 필터 팝업 ────────────────────────────────────────────────
+
+def _reset_filters() -> None:
+    """초기화 버튼 on_click 콜백 — 렌더 전에 실행되므로 위젯 충돌 없음."""
+    st.session_state["list_filter_courses"] = []
+    st.session_state["list_filter_types"]   = []
+    st.session_state["list_filter_done"]    = "미완료"
+
+
+@st.dialog("필터", width="large")
+def _filter_dialog(course_map: dict) -> None:
+    r1, r2 = st.columns(2)
+    with r1:
+        st.multiselect(
+            "과목",
+            options=list(course_map.keys()),
+            format_func=lambda c: course_map[c].name,
+            key="list_filter_courses",
+        )
+    with r2:
+        st.multiselect(
+            "종류",
+            options=ALL_TYPES_ORDER,
+            format_func=lambda k: EVENT_LABEL_MAP[k],
+            key="list_filter_types",
+        )
+    st.radio(
+        "표시 범위",
+        ["미완료", "완료", "전체"],
+        horizontal=True,
+        key="list_filter_done",
+    )
+    st.divider()
+    bc1, bc2 = st.columns(2)
+    with bc1:
+        st.button(
+            "초기화",
+            use_container_width=True,
+            key="filter_reset",
+            on_click=_reset_filters,
+        )
+    with bc2:
+        if st.button("닫기", type="primary", use_container_width=True, key="filter_close"):
+            st.rerun()
+
+
 # ─── Main ────────────────────────────────────────────────────
 
 def run():
+    # ── 필터 session state 기본값 초기화 ─────────────────────
+    if "list_filter_done" not in st.session_state:
+        st.session_state["list_filter_done"] = "미완료"
+    if "list_filter_courses" not in st.session_state:
+        st.session_state["list_filter_courses"] = []
+    if "list_filter_types" not in st.session_state:
+        st.session_state["list_filter_types"] = []
+
     data = load()
 
-    col_title, col_btn = st.columns([8, 1.4])
+    # 활성 필터가 있으면 버튼을 primary로 강조
+    _any_filter = bool(
+        st.session_state["list_filter_courses"]
+        or st.session_state["list_filter_types"]
+        or st.session_state["list_filter_done"] != "미완료"
+    )
+
+    col_title, col_filter, col_add = st.columns([6, 1.4, 1.4])
     with col_title:
         st.title("일정 관리")
-    with col_btn:
+    with col_filter:
+        st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+        if st.button(
+            "🔍 필터",
+            use_container_width=True,
+            key="open_filter_dialog",
+            type="primary" if _any_filter else "secondary",
+        ):
+            if data.courses:
+                _filter_dialog(get_course_map(data))
+    with col_add:
         st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
         if st.button("＋ 일정 추가", type="primary", use_container_width=True, key="open_add_dialog"):
             if not data.courses:
@@ -409,39 +480,19 @@ def run():
     course_map = get_course_map(data)
     today      = date.today()
 
-    # ── 필터 ─────────────────────────────────────────────────
-    with st.expander("필터", expanded=True):
-        fc1, fc2, fc3 = st.columns(3)
-        with fc1:
-            sel_courses = st.multiselect(
-                "과목",
-                options=[c.code for c in data.courses],
-                format_func=lambda c: course_map[c].name,
-                key="list_filter_courses",
-            )
-        with fc2:
-            sel_types = st.multiselect(
-                "종류",
-                options=ALL_TYPES_ORDER,
-                format_func=lambda k: EVENT_LABEL_MAP[k],
-                key="list_filter_types",
-            )
-        with fc3:
-            sel_done = st.radio(
-                "완료 여부",
-                ["전체", "미완료만", "완료만"],
-                horizontal=True,
-                key="list_filter_done",
-            )
+    # ── 필터 적용 ─────────────────────────────────────────────
+    sel_courses = st.session_state["list_filter_courses"]
+    sel_types   = st.session_state["list_filter_types"]
+    sel_done    = st.session_state["list_filter_done"]
 
     events = data.events
     if sel_courses:
         events = [e for e in events if e.course_code in sel_courses]
     if sel_types:
         events = [e for e in events if e.event_type_key() in sel_types]
-    if sel_done == "미완료만":
+    if sel_done == "미완료":
         events = [e for e in events if not e.completed]
-    elif sel_done == "완료만":
+    elif sel_done == "완료":
         events = [e for e in events if e.completed]
 
     events = sorted(events, key=lambda e: (e.sort_at() or datetime.max))
