@@ -387,12 +387,23 @@ def _render_event_row(event, course_map: dict, today: date, courses: list) -> No
 
 
 # ─── 필터 팝업 ────────────────────────────────────────────────
+# 다이얼로그는 dlg_filter_* 키(임시 작업용)를 사용하고,
+# "적용" 시에만 list_filter_* (실제 적용 키)로 반영합니다.
+# 이렇게 분리해야 "다시 열었을 때 현재 적용값"이 정확히 보입니다.
 
-def _reset_filters() -> None:
-    """초기화 버튼 on_click 콜백 — 렌더 전에 실행되므로 위젯 충돌 없음."""
-    st.session_state["list_filter_courses"] = []
-    st.session_state["list_filter_types"]   = []
-    st.session_state["list_filter_done"]    = "미완료"
+def _open_filter_dialog() -> None:
+    """필터 버튼 on_click — 적용 값을 다이얼로그 임시 키로 복사."""
+    ss = st.session_state
+    ss["dlg_filter_courses"] = list(ss.get("list_filter_courses", []))
+    ss["dlg_filter_types"]   = list(ss.get("list_filter_types", []))
+    ss["dlg_filter_done"]    = ss.get("list_filter_done", "미완료")
+
+
+def _reset_dlg_filters() -> None:
+    """초기화 버튼 on_click — 다이얼로그 임시 키만 리셋."""
+    st.session_state["dlg_filter_courses"] = []
+    st.session_state["dlg_filter_types"]   = []
+    st.session_state["dlg_filter_done"]    = "미완료"
 
 
 @st.dialog("필터", width="large")
@@ -403,20 +414,20 @@ def _filter_dialog(course_map: dict) -> None:
             "과목",
             options=list(course_map.keys()),
             format_func=lambda c: course_map[c].name,
-            key="list_filter_courses",
+            key="dlg_filter_courses",
         )
     with r2:
         st.multiselect(
             "종류",
             options=ALL_TYPES_ORDER,
             format_func=lambda k: EVENT_LABEL_MAP[k],
-            key="list_filter_types",
+            key="dlg_filter_types",
         )
     st.radio(
         "표시 범위",
         ["미완료", "완료", "전체"],
         horizontal=True,
-        key="list_filter_done",
+        key="dlg_filter_done",
     )
     st.divider()
     bc1, bc2 = st.columns(2)
@@ -425,17 +436,22 @@ def _filter_dialog(course_map: dict) -> None:
             "초기화",
             use_container_width=True,
             key="filter_reset",
-            on_click=_reset_filters,
+            on_click=_reset_dlg_filters,
         )
     with bc2:
-        if st.button("닫기", type="primary", use_container_width=True, key="filter_close"):
+        if st.button("적용", type="primary", use_container_width=True, key="filter_apply"):
+            # 다이얼로그 임시값 → 실제 적용 키로 반영 후 닫기
+            ss = st.session_state
+            ss["list_filter_courses"] = list(ss.get("dlg_filter_courses", []))
+            ss["list_filter_types"]   = list(ss.get("dlg_filter_types", []))
+            ss["list_filter_done"]    = ss.get("dlg_filter_done", "미완료")
             st.rerun()
 
 
 # ─── Main ────────────────────────────────────────────────────
 
 def run():
-    # ── 필터 session state 기본값 초기화 ─────────────────────
+    # ── 필터 적용 session state 기본값 초기화 ────────────────
     if "list_filter_done" not in st.session_state:
         st.session_state["list_filter_done"] = "미완료"
     if "list_filter_courses" not in st.session_state:
@@ -445,7 +461,7 @@ def run():
 
     data = load()
 
-    # 활성 필터가 있으면 버튼을 primary로 강조
+    # 기본값(미완료 + 필터 없음)과 다르면 버튼 강조
     _any_filter = bool(
         st.session_state["list_filter_courses"]
         or st.session_state["list_filter_types"]
@@ -462,6 +478,7 @@ def run():
             use_container_width=True,
             key="open_filter_dialog",
             type="primary" if _any_filter else "secondary",
+            on_click=_open_filter_dialog,   # 열기 전에 현재값 복사
         ):
             if data.courses:
                 _filter_dialog(get_course_map(data))
