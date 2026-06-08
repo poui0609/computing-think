@@ -1,173 +1,141 @@
 """
 app.py
-이그잼 플래너 - 학생용 통합 일정 관리 앱 (Streamlit 화면 계층)
+이그잼 플래너 - 학생용 통합 일정 관리 앱 (Streamlit 화면 계층 / 모바일 친화 버전)
 
-실행 방법:
-    streamlit run app.py
+실행: streamlit run app.py
 
-기획서 대응:
-  - 수업/과제/시험 일정을 한 곳에서 통합 관리
-  - 앱 실행 시 임박한 일정을 자동으로 상단에 표시 (D-day + 임박순 정렬)
-  - 월간 캘린더 뷰
-  - 일정 입력/저장/조회/수정/삭제 (CSV 저장)
+모바일 친화 설계 요점:
+  - layout 을 'centered'(기본)로 두어 좁은 폰 화면에 맞춤 (wide 미사용)
+  - 사이드바 대신 화면을 '탭'으로 구성 → 한 번에 한 화면만 보임
+  - 입력 폼을 본문(추가 탭)으로 빼서 햄버거 메뉴에 숨지 않게 함
+  - 월간 캘린더를 7칸 격자 대신 '날짜 목록형'으로 → 폰에서 찌그러지지 않음
+  - 가로 정렬(컬럼) 최소화 → 항목을 위에서 아래로 세로 나열
+
+기획서 대응(기능은 그대로):
+  수업/과제/시험 통합 관리 · D-day + 임박순 정렬 · 캘린더 · 입력/수정/삭제 (CSV)
 """
 
 import calendar
-from datetime import date, datetime
+from datetime import date
 
 import streamlit as st
 
-# 데이터/로직은 planner 모듈에 모아 두었습니다. (화면과 로직 분리)
-import planner
+import planner  # 데이터/로직 (CSV 저장, D-day 계산, 정렬)
 
-# ---------------------------------------------------------------------------
-# 페이지 기본 설정
-# ---------------------------------------------------------------------------
-st.set_page_config(page_title="이그잼 플래너", page_icon="📅", layout="wide")
+# centered 레이아웃: 폰처럼 좁은 화면에서 내용이 가운데로 모여 읽기 좋습니다.
+st.set_page_config(page_title="이그잼 플래너", page_icon="📅", layout="centered")
 
-# 종류별 색상/이모지. 캘린더와 목록에서 한눈에 구분되도록 쓰입니다.
-CATEGORY_STYLE = {
-    "수업": ("🟦", "#3b82f6"),
-    "과제": ("🟧", "#f97316"),
-    "시험": ("🟥", "#ef4444"),
-    "기타": ("⬜", "#9ca3af"),
-}
+# 종류별 이모지. 목록에서 한눈에 종류를 구분하기 위함입니다.
+CATEGORY_EMOJI = {"수업": "🟦", "과제": "🟧", "시험": "🟥", "기타": "⬜"}
 
 
-def category_emoji(category: str) -> str:
-    """종류 이름을 받아 앞에 붙일 이모지를 돌려줍니다.
-    딕셔너리에 없는 값이 들어와도 오류 없이 기본값(⬜)을 쓰도록 했습니다."""
-    return CATEGORY_STYLE.get(category, ("⬜", "#9ca3af"))[0]
+def emoji(category: str) -> str:
+    """종류 이름 → 이모지. 없는 값이 와도 기본값(⬜)으로 안전하게 처리."""
+    return CATEGORY_EMOJI.get(category, "⬜")
 
 
-# ---------------------------------------------------------------------------
-# 사이드바: 새 일정 입력 폼
-# ---------------------------------------------------------------------------
-def render_input_form():
-    """왼쪽 사이드바에 일정 입력 폼을 그립니다.
-    st.form 으로 묶은 이유: '추가' 버튼을 누르는 순간에만 한 번에 처리되어,
-    입력 도중 화면이 계속 새로고침되는 것을 막기 위함입니다."""
-    st.sidebar.header("➕ 새 일정 추가")
-    with st.sidebar.form("add_form", clear_on_submit=True):
-        title = st.text_input("제목", placeholder="예: 컴퓨팅사고 과제 2")
-        category = st.selectbox("종류", planner.CATEGORIES)
-        due = st.date_input("날짜", value=date.today())
-        memo = st.text_area("메모 (선택)", placeholder="제출 형식, 장소 등")
-        submitted = st.form_submit_button("추가하기", use_container_width=True)
-
-    if submitted:
-        # 제목이 비어 있으면 저장하지 않고 경고만 보여줍니다.
-        if not title.strip():
-            st.sidebar.warning("제목을 입력해 주세요.")
-        else:
-            planner.add_schedule(title, category, due.strftime("%Y-%m-%d"), memo)
-            st.sidebar.success("일정이 추가되었습니다.")
-            st.rerun()  # 화면을 다시 그려 새 일정을 즉시 반영합니다.
+def dday_badge(n: int) -> str:
+    """남은 일수를 색이 들어간 배지 문자열로. 모바일에서 급한 정도가 바로 보이게 함.
+      - 0~2일: 빨강(매우 급함) / 3~6일: 주황 / 그 외: 회색 / 지난 일정: 빨강"""
+    label = planner.dday_label(n)
+    if n < 0:
+        color = "#9ca3af"          # 지난 일정은 흐리게
+    elif n <= 2:
+        color = "#ef4444"          # 임박: 빨강
+    elif n <= 6:
+        color = "#f97316"          # 주의: 주황
+    else:
+        color = "#3b82f6"          # 여유: 파랑
+    # st.markdown(unsafe_allow_html=True) 로 색 배지를 그립니다.
+    return (f"<span style='background:{color};color:white;padding:2px 8px;"
+            f"border-radius:10px;font-size:0.8rem;font-weight:600'>{label}</span>")
 
 
 # ---------------------------------------------------------------------------
-# 상단: 임박한 일정 (D-day + 임박순 정렬)
+# 탭 1: 임박한 일정
 # ---------------------------------------------------------------------------
-def render_urgent(items):
-    """완료되지 않은 일정을 임박순으로 정렬해 상단에 보여줍니다.
-    기획서의 '앱 실행 즉시 가장 급한 일정을 상단에 표시' 요구사항입니다."""
+def tab_urgent(items):
+    """완료 안 된 일정을 임박순으로 세로 나열. (앱 핵심: 급한 게 맨 위)"""
     st.subheader("🔥 임박한 일정")
     upcoming = planner.sort_by_urgency(items, include_done=False)
 
     if not upcoming:
-        st.info("등록된 일정이 없습니다. 왼쪽에서 일정을 추가해 보세요.")
+        st.info("일정이 없습니다. '추가' 탭에서 일정을 등록해 보세요.")
         return
 
-    # 가장 급한 3개는 큰 카드(metric)로 강조해서 보여줍니다.
-    top = upcoming[:3]
-    cols = st.columns(len(top))
-    for col, s in zip(cols, top):
+    # 카드 하나를 세로로 쌓습니다. 가로 컬럼을 쓰지 않아 폰에서 안 찌그러집니다.
+    for s in upcoming:
         n = planner.days_left(s)
-        label = planner.dday_label(n)
-        # delta 에 D-day 를 넣고, 지난 일정은 빨간색(inverse)으로 표시됩니다.
-        col.metric(
-            label=f"{category_emoji(s.category)} {s.title}",
-            value=label,
-            delta=s.due_date,
-            delta_color="off",
+        with st.container(border=True):
+            st.markdown(
+                f"{emoji(s.category)} **{s.title}**　{dday_badge(n)}",
+                unsafe_allow_html=True,
+            )
+            st.caption(f"{s.category} · {s.due_date}"
+                       + (f" · {s.memo}" if s.memo else ""))
+
+
+# ---------------------------------------------------------------------------
+# 탭 2: 캘린더 (목록형)
+# ---------------------------------------------------------------------------
+def tab_calendar(items):
+    """선택한 연/월의 일정을 '날짜순 목록'으로 보여줍니다.
+    7칸 달력 격자 대신 목록형이라 좁은 폰 화면에서도 잘 읽힙니다."""
+    st.subheader("🗓️ 캘린더")
+
+    today = date.today()
+    # 연/월 선택. 가로 2칸 정도는 폰에서도 무리 없습니다.
+    c1, c2 = st.columns(2)
+    year = int(c1.number_input("연도", 2000, 2100, today.year, 1))
+    month = int(c2.number_input("월", 1, 12, today.month, 1))
+
+    # 이 달의 모든 일정을 모아 날짜순으로 정렬합니다.
+    month_items = [s for s in items
+                   if s.due().year == year and s.due().month == month]
+    month_items.sort(key=lambda s: s.due())
+
+    # 이 달에 일정이 며칠에 있는지 헤더로 요약해 줍니다.
+    month_name = f"{year}년 {month}월"
+    if not month_items:
+        st.info(f"{month_name}에는 등록된 일정이 없습니다.")
+        return
+
+    st.caption(f"{month_name} · 총 {len(month_items)}건")
+
+    # 같은 날짜끼리 묶어, 날짜 제목 아래에 그날 일정들을 나열합니다.
+    last_day = None
+    for s in month_items:
+        d = s.due()
+        if d != last_day:
+            # 새 날짜가 시작될 때만 날짜 제목을 출력합니다.
+            weekday = ["월", "화", "수", "목", "금", "토", "일"][d.weekday()]
+            today_mark = " 🔵 (오늘)" if d == today else ""
+            st.markdown(f"**{d.day}일 ({weekday}){today_mark}**")
+            last_day = d
+        n = planner.days_left(s)
+        done = "✅ " if s.done else ""
+        st.markdown(
+            f"　{done}{emoji(s.category)} {s.title}　{dday_badge(n)}",
+            unsafe_allow_html=True,
         )
 
-    # 나머지는 간단한 줄 목록으로 이어서 보여줍니다.
-    if len(upcoming) > 3:
-        st.markdown("​")  # 약간의 간격
-        for s in upcoming[3:]:
-            n = planner.days_left(s)
-            st.write(f"{category_emoji(s.category)} ~{planner.dday_label(n)}~ "
-                     f"· {s.title} ({s.due_date})")
-
 
 # ---------------------------------------------------------------------------
-# 월간 캘린더 뷰
+# 탭 3: 전체 관리 (수정/삭제)
 # ---------------------------------------------------------------------------
-def render_calendar(items):
-    """선택한 연/월의 달력을 표 형태로 그리고, 각 날짜 칸에 그날의 일정을 채웁니다."""
-    st.subheader("🗓️ 월간 캘린더")
-
-    # 보고 싶은 연/월을 고르는 컨트롤. 기본값은 이번 달입니다.
-    today = date.today()
-    c1, c2 = st.columns(2)
-    year = c1.number_input("연도", min_value=2000, max_value=2100,
-                           value=today.year, step=1)
-    month = c2.number_input("월", min_value=1, max_value=12,
-                            value=today.month, step=1)
-    year, month = int(year), int(month)
-
-    # calendar.monthcalendar 는 해당 월을 '주 단위 리스트'로 돌려줍니다.
-    # 각 주는 7칸(월~일)이고, 그 달에 속하지 않는 칸은 0 으로 채워집니다.
-    cal = calendar.monthcalendar(year, month)
-    weekdays = ["월", "화", "수", "목", "금", "토", "일"]
-
-    # 요일 헤더
-    header_cols = st.columns(7)
-    for col, wd in zip(header_cols, weekdays):
-        col.markdown(f"**{wd}**")
-
-    # 주 단위로 한 줄씩, 그 안에서 7개 칸을 그립니다.
-    for week in cal:
-        day_cols = st.columns(7)
-        for col, day in zip(day_cols, week):
-            if day == 0:
-                col.write("")  # 이 달에 없는 칸은 비워 둡니다.
-                continue
-
-            cell_date = date(year, month, day)
-            # 오늘 날짜는 강조 표시
-            if cell_date == today:
-                col.markdown(f"**🔵 {day}**")
-            else:
-                col.markdown(f"{day}")
-
-            # 그날에 해당하는 일정들을 이모지+제목으로 표시합니다.
-            for s in planner.schedules_on(items, cell_date):
-                done_mark = "✅" if s.done else category_emoji(s.category)
-                col.caption(f"{done_mark} {s.title}")
-
-
-# ---------------------------------------------------------------------------
-# 전체 목록 + 수정/삭제
-# ---------------------------------------------------------------------------
-def render_manage(items):
-    """모든 일정을 목록으로 보여주고, 각 일정마다 완료/수정/삭제를 할 수 있게 합니다."""
-    st.subheader("📋 전체 일정 관리")
+def tab_manage(items):
+    """모든 일정을 펼침 영역으로 보여주고 수정/삭제/완료 처리."""
+    st.subheader("📋 전체 관리")
 
     if not items:
         st.info("아직 일정이 없습니다.")
         return
 
-    # 보기 좋게 날짜순으로 정렬해서 보여줍니다(완료 포함).
     for s in planner.sort_by_urgency(items, include_done=True):
         n = planner.days_left(s)
-        # 각 일정을 펼침 영역(expander)으로 만들어, 평소엔 한 줄로 깔끔하게 보입니다.
-        title_line = (f"{category_emoji(s.category)} {s.title} "
-                      f"· {s.due_date} · {planner.dday_label(n)}"
-                      + ("  (완료)" if s.done else ""))
-        with st.expander(title_line):
-            # 수정 입력칸들. 기존 값을 기본값으로 채워 둡니다.
+        head = (f"{emoji(s.category)} {s.title} · {planner.dday_label(n)}"
+                + ("  ✅" if s.done else ""))
+        with st.expander(head):
             new_title = st.text_input("제목", value=s.title, key=f"t{s.id}")
             new_cat = st.selectbox(
                 "종류", planner.CATEGORIES,
@@ -179,20 +147,16 @@ def render_manage(items):
             new_memo = st.text_area("메모", value=s.memo, key=f"m{s.id}")
             new_done = st.checkbox("완료함", value=s.done, key=f"k{s.id}")
 
+            # 버튼은 가로 2칸. 폰에서도 두 버튼 정도는 무난합니다.
             b1, b2 = st.columns(2)
-            # 저장 버튼: 바뀐 값들을 한 번에 업데이트합니다.
             if b1.button("💾 저장", key=f"save{s.id}", use_container_width=True):
                 planner.update_schedule(
-                    s.id,
-                    title=new_title.strip(),
-                    category=new_cat,
+                    s.id, title=new_title.strip(), category=new_cat,
                     due_date=new_due.strftime("%Y-%m-%d"),
-                    memo=new_memo.strip(),
-                    done=new_done,
+                    memo=new_memo.strip(), done=new_done,
                 )
                 st.success("수정되었습니다.")
                 st.rerun()
-            # 삭제 버튼
             if b2.button("🗑️ 삭제", key=f"del{s.id}", use_container_width=True):
                 planner.delete_schedule(s.id)
                 st.warning("삭제되었습니다.")
@@ -200,21 +164,45 @@ def render_manage(items):
 
 
 # ---------------------------------------------------------------------------
+# 탭 4: 새 일정 추가
+# ---------------------------------------------------------------------------
+def tab_add():
+    """입력 폼을 본문에 배치(사이드바 X)해, 폰에서 바로 보이고 입력하기 쉽게 함."""
+    st.subheader("➕ 새 일정 추가")
+    with st.form("add_form", clear_on_submit=True):
+        title = st.text_input("제목", placeholder="예: 컴퓨팅사고 과제 2")
+        category = st.selectbox("종류", planner.CATEGORIES)
+        due = st.date_input("날짜", value=date.today())
+        memo = st.text_area("메모 (선택)", placeholder="제출 형식, 장소 등")
+        submitted = st.form_submit_button("추가하기", use_container_width=True)
+
+    if submitted:
+        if not title.strip():
+            st.warning("제목을 입력해 주세요.")
+        else:
+            planner.add_schedule(title, category, due.strftime("%Y-%m-%d"), memo)
+            st.success("추가되었습니다. 다른 탭에서 확인하세요.")
+
+
+# ---------------------------------------------------------------------------
 # 메인
 # ---------------------------------------------------------------------------
 def main():
     st.title("📅 이그잼 플래너")
-    st.caption("수업 · 과제 · 시험 일정을 한 곳에서. 가장 급한 일정이 맨 위에.")
+    st.caption("수업·과제·시험을 한 곳에서. 급한 일정이 맨 위에.")
 
-    # 매 실행마다 CSV 에서 최신 일정을 읽어옵니다.
-    items = planner.load_schedules()
+    items = planner.load_schedules()  # 매 실행 시 최신 데이터 로드
 
-    render_input_form()      # 사이드바 입력 폼
-    render_urgent(items)     # 상단 임박 일정
-    st.divider()
-    render_calendar(items)   # 월간 캘린더
-    st.divider()
-    render_manage(items)     # 전체 목록 + 수정/삭제
+    # 탭으로 화면 분리 → 폰에서 한 번에 한 화면만 보임
+    t1, t2, t3, t4 = st.tabs(["🔥 임박", "🗓️ 캘린더", "📋 관리", "➕ 추가"])
+    with t1:
+        tab_urgent(items)
+    with t2:
+        tab_calendar(items)
+    with t3:
+        tab_manage(items)
+    with t4:
+        tab_add()
 
 
 if __name__ == "__main__":
