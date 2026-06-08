@@ -21,7 +21,7 @@ def progress_color(pct: int) -> str:
 
 def progress_bar_html(pct: int, height: int = 6) -> str:
     color = progress_color(pct)
-    label = "전부 클리어! 🎉" if pct == 100 else f"{pct}%"
+    label = "Clear!" if pct == 100 else f"{pct}%"
     return (
         f'<div style="display:flex; align-items:center; gap:6px;">'
         f'<div style="flex:1; height:{height}px; background:#eee; border-radius:{height}px;">'

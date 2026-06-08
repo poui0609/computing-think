@@ -9,6 +9,20 @@ from core.storage import (
     load, set_event_progress, toggle_event_completed,
     get_course_map, current_week_number,
 )
+
+
+# ─── 진행률/완료 on_change 콜백 ────────────────────────────────
+
+def _cb_home_done(event_id: str) -> None:
+    done = st.session_state[f"home_done_{event_id}"]
+    evt  = toggle_event_completed(event_id, done)
+    st.session_state[f"home_prog_{event_id}"] = evt.progress
+
+
+def _cb_home_prog(event_id: str) -> None:
+    prog = st.session_state[f"home_prog_{event_id}"]
+    evt  = set_event_progress(event_id, prog)
+    st.session_state[f"home_done_{event_id}"] = evt.completed
 from core.dday import calc_dday, dday_label, dday_color
 from core.progress import progress_color, progress_bar_html, course_week_progress
 from core.models import PeriodEvent, WindowEvent
@@ -65,21 +79,19 @@ def _event_card(event, course_map: dict, today: date) -> None:
                     f'</div>',
                     unsafe_allow_html=True,
                 )
-            done = st.checkbox("완료", value=event.completed, key=f"home_done_{event.id}")
-            if done != event.completed:
-                toggle_event_completed(event.id, done)
-                st.rerun()
+            st.checkbox(
+                "완료", value=event.completed,
+                key=f"home_done_{event.id}",
+                on_change=_cb_home_done, args=(event.id,),
+            )
 
-        prog = st.slider(
-            "진행률",
-            0, 100, event.progress,
+        st.slider(
+            "진행률", 0, 100, event.progress,
             key=f"home_prog_{event.id}",
             format="%d%%",
             label_visibility="collapsed",
+            on_change=_cb_home_prog, args=(event.id,),
         )
-        if prog != event.progress:
-            set_event_progress(event.id, prog)
-            st.rerun()
 
 
 def run():
@@ -153,12 +165,13 @@ def run():
         return evts
 
     all_incomplete = [e for e in data.events if not e.completed]
+    _dated = [(e, e.sort_at()) for e in all_incomplete]
     all_future = sorted(
-        [e for e in all_incomplete if e.sort_at() and e.sort_at().date() >= today],
+        [e for e, sa in _dated if sa and sa.date() >= today],
         key=lambda e: e.sort_at() or datetime.max,
     )
     overdue = sorted(
-        [e for e in all_incomplete if e.sort_at() and e.sort_at().date() < today],
+        [e for e, sa in _dated if sa and sa.date() < today],
         key=lambda e: e.sort_at() or datetime.max,
     )
 

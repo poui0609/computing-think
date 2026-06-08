@@ -1,4 +1,3 @@
-"""pages/rules.py — 반복 규칙 관리"""
 from __future__ import annotations
 
 import uuid
@@ -8,7 +7,7 @@ import streamlit as st
 
 from core.models import (
     EVENT_TYPE_MAP, EVENT_LABEL_MAP, EVENT_ICON_MAP,
-    ALL_TYPES_ORDER,
+    ALL_TYPES_ORDER, VISIBLE_TYPES,
     WindowCycleRule, PeriodWeeklyRule, DueWeeklyRule,
     WEEKDAY_KO,
 )
@@ -16,11 +15,11 @@ from core.period import PERIOD_LABELS
 from core.storage import load, add_rule, remove_rule, update_rule, get_course_map
 from core.rule_engine import expand_rule, regenerate_rule, rule_preview
 
-# Event types grouped by timing mode
-_PERIOD_TYPES   = {"quiz", "zoom_meeting"}
-_WINDOW_TYPES   = {"assignment", "vod"}
+# Event types grouped by timing mode (visible + legacy)
+_PERIOD_TYPES   = {"quiz", "zoom_meeting", "exam"}
+_WINDOW_TYPES   = {"assignment", "vod", "group_evaluation"}
 _DEADLINE_TYPES = {
-    "poll", "board", "survey", "group_evaluation",
+    "poll", "board", "survey",
     "forum", "wiki", "file", "folder", "label", "url",
 }
 
@@ -82,11 +81,14 @@ def _rule_form(
         key=f"{form_key}_course",
     )
 
-    # Event type
+    # Event type (UI에서는 VISIBLE_TYPES 6개만 표시)
+    _ev_default = dv.get("event_type", "assignment")
+    if _ev_default not in VISIBLE_TYPES:
+        _ev_default = "assignment"
     type_key = st.selectbox(
         "일정 종류",
-        options=ALL_TYPES_ORDER,
-        index=ALL_TYPES_ORDER.index(dv.get("event_type", "assignment")),
+        options=VISIBLE_TYPES,
+        index=VISIBLE_TYPES.index(_ev_default),
         format_func=lambda k: EVENT_LABEL_MAP[k],
         key=f"{form_key}_type",
     )

@@ -26,7 +26,7 @@ def run():
 
         auto_name = mapping.get(code_input, "")
         if code_input and auto_name:
-            st.success(f"매핑 확인: **{auto_name}**")
+            st.info(f"과목명: **{auto_name}**")
             name_input = auto_name
         elif code_input:
             st.warning("CourseMapping에 없는 학정번호입니다. 과목명을 직접 입력하세요.")

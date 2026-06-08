@@ -51,12 +51,14 @@ def load() -> ScheduleData:
         )
 
     raw = json.loads(DATA_PATH.read_text(encoding="utf-8"))
+    rules  = [rule_from_dict(r)  for r in raw.get("rules",  [])]
+    events = [event_from_dict(e) for e in raw.get("events", [])]
     return ScheduleData(
         version=raw.get("version", "1.0"),
         semester=raw.get("semester", DEFAULT_SEMESTER),
         courses=[Course.from_dict(c) for c in raw.get("courses", [])],
-        rules=[rule_from_dict(r) for r in raw.get("rules", [])],
-        events=[event_from_dict(e) for e in raw.get("events", [])],
+        rules=[r for r in rules   if r is not None],
+        events=[e for e in events if e is not None],
     )
 
 
@@ -163,6 +165,8 @@ def toggle_event_completed(event_id: str, completed: bool) -> Event:
     fields: dict = {"completed": completed}
     if completed:
         fields["progress"] = 100
+    else:
+        fields["progress"] = 0
     return update_event(event_id, **fields)
 
 

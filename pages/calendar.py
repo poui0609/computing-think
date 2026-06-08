@@ -14,6 +14,20 @@ from core.models import (
     EVENT_LABEL_MAP, EVENT_ICON_MAP,
 )
 from core.storage import load, get_course_map, set_event_progress, toggle_event_completed
+
+
+# ─── 캘린더 상세 on_change 콜백 ───────────────────────────────
+
+def _cb_cal_done(event_id: str, d: str) -> None:
+    done = st.session_state[f"cal_det_done_{event_id}_{d}"]
+    evt  = toggle_event_completed(event_id, done)
+    st.session_state[f"cal_det_prog_{event_id}_{d}"] = evt.progress
+
+
+def _cb_cal_prog(event_id: str, d: str) -> None:
+    prog = st.session_state[f"cal_det_prog_{event_id}_{d}"]
+    evt  = set_event_progress(event_id, prog)
+    st.session_state[f"cal_det_done_{event_id}_{d}"] = evt.completed
 from core.dday import calc_dday, dday_label
 from core.progress import progress_color, progress_bar_html, course_week_progress
 from core.rule_engine import week_number as compute_week_number
@@ -206,8 +220,11 @@ def _render_week_row(
                     f'<div style="font-size:9px; color:#888; margin-top:1px;">+{extra}건 더</div>'
                 )
 
+            is_selected = st.session_state.get("cal_selected_date") == d
+            selected_border = "border:2px solid #4A90D9;" if is_selected else ""
+
             st.markdown(
-                f'<div style="{style}">'
+                f'<div style="{style} {selected_border}">'
                 f'<div style="font-size:11px; font-weight:bold; color:{"#E74C3C" if d == today else "#333"};">'
                 f'{d.day}'
                 f'</div>'
@@ -216,12 +233,20 @@ def _render_week_row(
                 unsafe_allow_html=True,
             )
 
-            # Expandable day detail on click (using expander trick)
-            if day_events and st.button(
-                "", key=f"cal_day_{d}", help=f"{d} 일정 상세",
-                use_container_width=True,
-            ):
-                st.session_state["cal_selected_date"] = d
+            # 이벤트 있는 날에만 상세 버튼 표시
+            if day_events:
+                btn_label = "▲ 닫기" if is_selected else f"📋 {len(day_events)}건"
+                if st.button(
+                    btn_label,
+                    key=f"cal_day_{d}",
+                    use_container_width=True,
+                    type="primary" if is_selected else "secondary",
+                ):
+                    if is_selected:
+                        st.session_state.pop("cal_selected_date", None)
+                    else:
+                        st.session_state["cal_selected_date"] = d
+                    st.rerun()
 
 
 def _render_day_detail(d: date, events: list[Event], course_map: dict, today: date) -> None:
@@ -251,19 +276,18 @@ def _render_day_detail(d: date, events: list[Event], course_map: dict, today: da
                     st.caption(dday_label(dday))
 
             st.markdown(progress_bar_html(evt.progress, height=5), unsafe_allow_html=True)
-            prog = st.slider(
+            st.slider(
                 "진행률", 0, 100, evt.progress,
                 key=f"cal_det_prog_{evt.id}_{d}",
                 format="%d%%",
                 label_visibility="collapsed",
+                on_change=_cb_cal_prog, args=(evt.id, str(d)),
             )
-            if prog != evt.progress:
-                set_event_progress(evt.id, prog)
-                st.rerun()
-            done = st.checkbox("완료", value=evt.completed, key=f"cal_det_done_{evt.id}_{d}")
-            if done != evt.completed:
-                toggle_event_completed(evt.id, done)
-                st.rerun()
+            st.checkbox(
+                "완료", value=evt.completed,
+                key=f"cal_det_done_{evt.id}_{d}",
+                on_change=_cb_cal_done, args=(evt.id, str(d)),
+            )
 
 
 # ─── Main ─────────────────────────────────────────────────────
@@ -361,11 +385,25 @@ def run():
                 unsafe_allow_html=True,
             )
 
-    # ── Calendar grid ─────────────────────────────────────────
-    # calendar.monthcalendar: list of weeks, Mon=0, Sun=6, 0=empty
-    month_weeks = calendar.monthcalendar(yr, mo)
+    # ── 선택된 날짜 상세 패널 (캘린더 위) ────────────────────
+    if "cal_selected_date" in st.session_state:
+        sel_d = st.session_state["cal_selected_date"]
+        with st.container(border=True):
+            col_title, col_close = st.columns([8, 1])
+            with col_title:
+                st.markdown(
+                    f"### 📋 {sel_d.strftime('%Y년 %m월 %d일 (%a)')} 일정 상세"
+                )
+            with col_close:
+                if st.button("✕ 닫기", key="cal_close_detail", use_container_width=True):
+                    st.session_state.pop("cal_selected_date")
+                    st.rerun()
+            _render_day_detail(sel_d, events, course_map, today)
+        st.divider()
 
-    sem_start = date.fromisoformat(data.semester["start_date"])
+    # ── Calendar grid ─────────────────────────────────────────
+    month_weeks = calendar.monthcalendar(yr, mo)
+    sem_start   = date.fromisoformat(data.semester["start_date"])
 
     for week in month_weeks:
         week_dates: list[Optional[date]] = []
@@ -382,15 +420,6 @@ def run():
         _render_week_row(
             week_dates, events, course_map, today, data, w_num, show_week_progress
         )
-
-    # ── Day detail panel ──────────────────────────────────────
-    if "cal_selected_date" in st.session_state:
-        sel_d = st.session_state["cal_selected_date"]
-        st.divider()
-        _render_day_detail(sel_d, events, course_map, today)
-        if st.button("닫기", key="cal_close_detail"):
-            st.session_state.pop("cal_selected_date")
-            st.rerun()
 
 
 run()

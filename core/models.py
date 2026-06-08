@@ -115,14 +115,14 @@ class PeriodEvent(Event):
 
 @dataclass
 class Quiz(PeriodEvent):
-    def label(self) -> str:         return "퀴즈/시험"
+    def label(self) -> str:         return "퀴즈"
     def icon_path(self) -> str:     return _icon("Quiz_Icon.png")
     def event_type_key(self) -> str: return "quiz"
 
 
 @dataclass
 class ZoomMeeting(PeriodEvent):
-    def label(self) -> str:         return "화상강의"
+    def label(self) -> str:         return "화상 강의"
     def icon_path(self) -> str:     return _icon("Zoommeeting_Icon.png")
     def event_type_key(self) -> str: return "zoom_meeting"
 
@@ -153,7 +153,7 @@ class Assignment(WindowEvent):
 
 @dataclass
 class VOD(WindowEvent):
-    def label(self) -> str:         return "동영상"
+    def label(self) -> str:         return "동영상 강의"
     def icon_path(self) -> str:     return _icon("VOD_Icon.png")
     def event_type_key(self) -> str: return "vod"
 
@@ -196,9 +196,10 @@ class Survey(DeadlineEvent):
 
 
 @dataclass
-class GroupEvaluation(DeadlineEvent):
-    def label(self) -> str:         return "팀플평가"
-    def icon_path(self) -> str:     return _icon("GroupEvaluation_Icon.png")
+class GroupEvaluation(WindowEvent):
+    """조별과제 — 시작(optional) + 마감"""
+    def label(self) -> str:         return "조별과제"
+    def icon_path(self) -> str:     return _icon("Forum_Icon.png")
     def event_type_key(self) -> str: return "group_evaluation"
 
 
@@ -232,7 +233,7 @@ class Folder(DeadlineEvent):
 
 @dataclass
 class Label(DeadlineEvent):
-    def label(self) -> str:         return "라벨"
+    def label(self) -> str:         return "개요"
     def icon_path(self) -> str:     return _icon("Label_Icon.png")
     def event_type_key(self) -> str: return "label"
 
@@ -246,15 +247,26 @@ class URLLink(DeadlineEvent):
 
 # ─── Lookup maps ──────────────────────────────────────────────
 
+@dataclass
+class Exam(PeriodEvent):
+    """시험 — 교시 기반 (Quiz와 동일한 입력 방식)"""
+    def label(self) -> str:         return "시험"
+    def icon_path(self) -> str:     return _icon("Label_Icon.png")
+    def event_type_key(self) -> str: return "exam"
+
+
 EVENT_TYPE_MAP: dict[str, type[Event]] = {
-    "quiz":              Quiz,
+    # ── UI에 표시되는 6개 ──
+    "vod":               VOD,
     "zoom_meeting":      ZoomMeeting,
     "assignment":        Assignment,
-    "vod":               VOD,
+    "group_evaluation":  GroupEvaluation,
+    "quiz":              Quiz,
+    "exam":              Exam,
+    # ── (UI 미표시) ──
     "poll":              Poll,
     "board":             Board,
     "survey":            Survey,
-    "group_evaluation":  GroupEvaluation,
     "forum":             Forum,
     "wiki":              Wiki,
     "file":              File,
@@ -269,17 +281,24 @@ _DUMMY: dict[str, Event] = {
 EVENT_LABEL_MAP: dict[str, str] = {k: v.label() for k, v in _DUMMY.items()}
 EVENT_ICON_MAP: dict[str, str]  = {k: v.icon_path() for k, v in _DUMMY.items()}
 
+# UI에 표시할 6개 (순서 고정)
+VISIBLE_TYPES: list[str] = [
+    "vod", "zoom_meeting", "assignment", "group_evaluation", "quiz", "exam",
+]
+
+# 전체 타입 (데이터 호환 포함)
 ALL_TYPES_ORDER: list[str] = [
-    "quiz", "zoom_meeting", "assignment", "vod",
-    "poll", "board", "survey", "group_evaluation",
-    "forum", "wiki", "file", "folder", "label", "url",
+    "vod", "zoom_meeting", "assignment", "group_evaluation", "quiz", "exam",
+    "poll", "board", "survey", "forum", "wiki", "file", "folder", "label", "url",
 ]
 
 
-def event_from_dict(d: dict) -> Event:
+def event_from_dict(d: dict) -> Optional[Event]:
     from dataclasses import fields as dc_fields
     data = {k: v for k, v in d.items()}
-    event_type = data.pop("event_type")
+    event_type = data.pop("event_type", None)
+    if event_type is None or event_type not in EVENT_TYPE_MAP:
+        return None
     cls = EVENT_TYPE_MAP[event_type]
     valid = {f.name for f in dc_fields(cls)}
     return cls(**{k: v for k, v in data.items() if k in valid})
@@ -385,10 +404,12 @@ RULE_PATTERN_MAP: dict[str, type[Rule]] = {
 }
 
 
-def rule_from_dict(d: dict) -> Rule:
+def rule_from_dict(d: dict) -> Optional[Rule]:
     from dataclasses import fields as dc_fields
     data = {k: v for k, v in d.items()}
-    pattern = data.pop("pattern")
+    pattern = data.pop("pattern", None)
+    if pattern is None or pattern not in RULE_PATTERN_MAP:
+        return None
     cls = RULE_PATTERN_MAP[pattern]
     valid = {f.name for f in dc_fields(cls)}
     return cls(**{k: v for k, v in data.items() if k in valid})
