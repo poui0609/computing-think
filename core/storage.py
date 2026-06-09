@@ -119,6 +119,7 @@ def remove_course(code: str) -> None:
     data = load()
     data.courses = [c for c in data.courses if c.code != code]
     data.rules   = [r for r in data.rules   if r.course_code != code]
+    # 수업 이벤트만 삭제 (학사·개인 이벤트는 course_code가 없으므로 보존)
     data.events  = [e for e in data.events  if e.course_code != code]
     save(data)
 

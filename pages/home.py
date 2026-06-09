@@ -25,7 +25,7 @@ def _cb_home_prog(event_id: str) -> None:
     st.session_state[f"home_done_{event_id}"] = evt.completed
 from core.dday import calc_dday, dday_label, dday_color
 from core.progress import progress_color, progress_bar_html, course_week_progress
-from core.models import PeriodEvent, WindowEvent
+from core.models import PeriodEvent, DeadlineEvent, RangeEvent, DOMAIN_LABEL
 
 
 def _time_info(event) -> str:
@@ -37,21 +37,29 @@ def _time_info(event) -> str:
             if event.start_period else ""
         )
         return f"{start.strftime('%m/%d(%a)')} {start.strftime('%H:%M')}~{end.strftime('%H:%M')}{period_str}"
-    elif isinstance(event, WindowEvent):
+    if isinstance(event, RangeEvent) and event.start_at:
+        s = datetime.fromisoformat(event.start_at).strftime("%m/%d %H:%M")
+        e = datetime.fromisoformat(event.end_at).strftime("%m/%d %H:%M") if event.end_at else "?"
+        return f"{s} ~ {e}"
+    if isinstance(event, DeadlineEvent):
         due = datetime.fromisoformat(event.due_at).strftime("%m/%d(%a) %H:%M") if event.due_at else "?"
         if event.open_at:
             op = datetime.fromisoformat(event.open_at).strftime("%m/%d %H:%M")
             return f"{op} ~ {due}"
         return f"~ {due}"
-    elif hasattr(event, "due_at") and event.due_at:
-        return f"~ {datetime.fromisoformat(event.due_at).strftime('%m/%d(%a) %H:%M')}"
     return ""
 
 
 def _event_card(event, course_map: dict, today: date) -> None:
+    domain = getattr(event, "domain", "course")
     course = course_map.get(event.course_code)
-    cname  = course.name  if course else event.course_code
-    ccolor = course.color if course else "#999"
+    if domain == "course" and course:
+        cname  = course.name
+        ccolor = course.color
+    else:
+        domain_colors = {"academic": "#9B59B6", "personal": "#1ABC9C"}
+        cname  = DOMAIN_LABEL.get(domain, domain)
+        ccolor = domain_colors.get(domain, "#888")
 
     dday  = calc_dday(event, today)
     color = progress_color(event.progress)

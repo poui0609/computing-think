@@ -10,8 +10,8 @@ from typing import Optional
 import streamlit as st
 
 from core.models import (
-    Event, PeriodEvent, WindowEvent, DeadlineEvent,
-    EVENT_LABEL_MAP, EVENT_ICON_MAP,
+    Event, PeriodEvent, DeadlineEvent, RangeEvent,
+    EVENT_LABEL_MAP, EVENT_ICON_MAP, DOMAIN_LABEL,
 )
 from core.storage import load, get_course_map, set_event_progress, toggle_event_completed
 
@@ -119,15 +119,16 @@ def _event_date_range(event: Event) -> tuple[Optional[date], Optional[date]]:
         s = datetime.fromisoformat(event.start_at).date() if event.start_at else None
         e = datetime.fromisoformat(event.end_at).date()   if event.end_at   else s
         return s, e
-    elif isinstance(event, WindowEvent):
+    if isinstance(event, RangeEvent):
+        s = datetime.fromisoformat(event.start_at).date() if event.start_at else None
+        e = datetime.fromisoformat(event.end_at).date()   if event.end_at   else s
+        return s, e
+    if isinstance(event, DeadlineEvent):
         s = datetime.fromisoformat(event.open_at).date() if event.open_at else None
         e = datetime.fromisoformat(event.due_at).date()  if event.due_at  else None
         if s is None:
-            return e, e  # deadline-style: only show on due day
+            return e, e
         return s, e
-    elif isinstance(event, DeadlineEvent):
-        d = datetime.fromisoformat(event.due_at).date() if event.due_at else None
-        return d, d
     return None, None
 
 
@@ -210,8 +211,16 @@ def _render_week_row(
             extra = max(0, len(day_events) - max_shown)
 
             for evt in day_events[:max_shown]:
+                domain = getattr(evt, "domain", "course")
                 course = course_map.get(evt.course_code)
-                color  = course.color if course else "#999"
+                if domain == "course" and course:
+                    color = course.color
+                elif domain == "academic":
+                    color = "#9B59B6"
+                elif domain == "personal":
+                    color = "#1ABC9C"
+                else:
+                    color = "#999"
                 s, e_d = _event_date_range(evt)
                 bars_html += _bar_segment(evt, d, s or d, e_d or d, color)
 
@@ -258,9 +267,15 @@ def _render_day_detail(d: date, events: list[Event], course_map: dict, today: da
         return
 
     for evt in day_events:
+        domain = getattr(evt, "domain", "course")
         course = course_map.get(evt.course_code)
-        cname  = course.name  if course else evt.course_code
-        ccolor = course.color if course else "#999"
+        if domain == "course" and course:
+            cname  = course.name
+            ccolor = course.color
+        else:
+            domain_colors = {"academic": "#9B59B6", "personal": "#1ABC9C"}
+            cname  = DOMAIN_LABEL.get(domain, domain)
+            ccolor = domain_colors.get(domain, "#888")
         dday   = calc_dday(evt, today)
 
         with st.container(border=True):

@@ -17,7 +17,7 @@ from core.rule_engine import expand_rule, regenerate_rule, rule_preview
 
 # Event types grouped by timing mode (visible + legacy)
 _PERIOD_TYPES   = {"quiz", "zoom_meeting", "exam"}
-_WINDOW_TYPES   = {"assignment", "vod", "group_evaluation"}
+_WINDOW_TYPES   = {"assignment", "vod", "team_project"}
 _DEADLINE_TYPES = {
     "poll", "board", "survey",
     "forum", "wiki", "file", "folder", "label", "url",

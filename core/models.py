@@ -1,6 +1,7 @@
 """
 core/models.py
-OOP class hierarchy: Course, Event (14 subclasses), Rule (3 subclasses)
+Event 도메인 3분류: CourseEvent(수업) / AcademicEvent(학사) / PersonalEvent(개인)
+TimingSpec 3종: PeriodTiming / DeadlineTiming / RangeTiming
 """
 from __future__ import annotations
 
@@ -46,13 +47,14 @@ class Course:
 @dataclass
 class Event:
     id: str
-    course_code: str
     title: str
+    domain: str = "course"          # "course" | "academic" | "personal"
+    course_code: str = ""           # 수업 Event만 필수
     description: str = ""
     source: str = "manual"          # "manual" | "rule"
     rule_id: Optional[str] = None
     week_number: Optional[int] = None
-    progress: int = 0               # 0~100
+    progress: int = 0
     completed: bool = False
     created_at: str = field(
         default_factory=lambda: datetime.now().isoformat(timespec="seconds")
@@ -73,9 +75,10 @@ class Event:
     def _base_dict(self) -> dict:
         return {
             "id": self.id,
-            "course_code": self.course_code,
+            "domain": self.domain,
             "event_type": self.event_type_key(),
             "title": self.title,
+            "course_code": self.course_code,
             "description": self.description,
             "source": self.source,
             "rule_id": self.rule_id,
@@ -89,12 +92,16 @@ class Event:
         return self._base_dict()
 
 
-# ─── PeriodEvent ──────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════
+# 수업 Event (CourseEvent) — course_code 필수, 6종 타입
+# ═══════════════════════════════════════════════════════════════
+
+# ── PeriodTiming 믹스인 (교시 기반) ───────────────────────────
 
 @dataclass
 class PeriodEvent(Event):
-    """교시 기반 이벤트 (퀴즈/시험, 화상강의)"""
-    start_at: Optional[str] = None      # ISO datetime string
+    """교시 기반 이벤트 (퀴즈·시험·화상강의)"""
+    start_at: Optional[str] = None
     end_at: Optional[str] = None
     start_period: Optional[int] = None
     end_period: Optional[int] = None
@@ -113,25 +120,11 @@ class PeriodEvent(Event):
         return d
 
 
-@dataclass
-class Quiz(PeriodEvent):
-    def label(self) -> str:         return "퀴즈"
-    def icon_path(self) -> str:     return _icon("Quiz_Icon.png")
-    def event_type_key(self) -> str: return "quiz"
-
+# ── DeadlineTiming 믹스인 (open? + due) ──────────────────────
 
 @dataclass
-class ZoomMeeting(PeriodEvent):
-    def label(self) -> str:         return "화상 강의"
-    def icon_path(self) -> str:     return _icon("Zoommeeting_Icon.png")
-    def event_type_key(self) -> str: return "zoom_meeting"
-
-
-# ─── WindowEvent ──────────────────────────────────────────────
-
-@dataclass
-class WindowEvent(Event):
-    """기간 기반 이벤트 — 시작(optional) + 마감 (동영상, 과제)"""
+class DeadlineEvent(Event):
+    """마감 기반 이벤트 — open_at(선택) + due_at"""
     open_at: Optional[str] = None
     due_at: Optional[str] = None
 
@@ -144,153 +137,314 @@ class WindowEvent(Event):
         return d
 
 
+# ── RangeTiming 믹스인 (자유 시간 구간) ──────────────────────
+
 @dataclass
-class Assignment(WindowEvent):
-    def label(self) -> str:         return "과제"
-    def icon_path(self) -> str:     return _icon("Assignment_Icon.png")
+class RangeEvent(Event):
+    """구간 기반 이벤트 — start_at + end_at (자유 시각)"""
+    start_at: Optional[str] = None
+    end_at: Optional[str] = None
+
+    def sort_at(self) -> Optional[datetime]:
+        return datetime.fromisoformat(self.start_at) if self.start_at else None
+
+    def to_dict(self) -> dict:
+        d = self._base_dict()
+        d.update({"start_at": self.start_at, "end_at": self.end_at})
+        return d
+
+
+# ── 수업 6종 ─────────────────────────────────────────────────
+
+@dataclass
+class Quiz(PeriodEvent):
+    """시험형 — 퀴즈"""
+    def __post_init__(self): self.domain = "course"
+    def label(self) -> str:          return "퀴즈"
+    def icon_path(self) -> str:      return _icon("Quiz_Icon.png")
+    def event_type_key(self) -> str: return "quiz"
+
+
+@dataclass
+class Exam(PeriodEvent):
+    """시험형 — 시험"""
+    def __post_init__(self): self.domain = "course"
+    def label(self) -> str:          return "시험"
+    def icon_path(self) -> str:      return _icon("Label_Icon.png")
+    def event_type_key(self) -> str: return "exam"
+
+
+@dataclass
+class ZoomMeeting(PeriodEvent):
+    """강의형 — 화상 강의"""
+    def __post_init__(self): self.domain = "course"
+    def label(self) -> str:          return "화상 강의"
+    def icon_path(self) -> str:      return _icon("Zoommeeting_Icon.png")
+    def event_type_key(self) -> str: return "zoom_meeting"
+
+
+@dataclass
+class Assignment(DeadlineEvent):
+    """과제형 — 과제"""
+    def __post_init__(self): self.domain = "course"
+    def label(self) -> str:          return "과제"
+    def icon_path(self) -> str:      return _icon("Assignment_Icon.png")
     def event_type_key(self) -> str: return "assignment"
 
 
 @dataclass
-class VOD(WindowEvent):
-    def label(self) -> str:         return "동영상 강의"
-    def icon_path(self) -> str:     return _icon("VOD_Icon.png")
+class TeamProject(DeadlineEvent):
+    """과제형 — 조별과제"""
+    def __post_init__(self): self.domain = "course"
+    def label(self) -> str:          return "조별과제"
+    def icon_path(self) -> str:      return _icon("Forum_Icon.png")
+    def event_type_key(self) -> str: return "team_project"
+
+
+@dataclass
+class VOD(DeadlineEvent):
+    """강의형 — 동영상 강의"""
+    def __post_init__(self): self.domain = "course"
+    def label(self) -> str:          return "동영상 강의"
+    def icon_path(self) -> str:      return _icon("VOD_Icon.png")
     def event_type_key(self) -> str: return "vod"
 
 
-# ─── DeadlineEvent ────────────────────────────────────────────
-
-@dataclass
-class DeadlineEvent(Event):
-    """마감 기반 이벤트 — due_at 만 (10종)"""
-    due_at: Optional[str] = None
-
-    def sort_at(self) -> Optional[datetime]:
-        return datetime.fromisoformat(self.due_at) if self.due_at else None
-
-    def to_dict(self) -> dict:
-        d = self._base_dict()
-        d.update({"due_at": self.due_at})
-        return d
-
+# ── 수업 UI 미표시 레거시 타입 (데이터 호환용) ────────────────
 
 @dataclass
 class Poll(DeadlineEvent):
-    def label(self) -> str:         return "투표"
-    def icon_path(self) -> str:     return _icon("Poll_Icon.png")
+    def label(self) -> str:          return "투표"
+    def icon_path(self) -> str:      return _icon("Poll_Icon.png")
     def event_type_key(self) -> str: return "poll"
-
 
 @dataclass
 class Board(DeadlineEvent):
-    def label(self) -> str:         return "게시판"
-    def icon_path(self) -> str:     return _icon("Board_Icon.png")
+    def label(self) -> str:          return "게시판"
+    def icon_path(self) -> str:      return _icon("Board_Icon.png")
     def event_type_key(self) -> str: return "board"
-
 
 @dataclass
 class Survey(DeadlineEvent):
-    def label(self) -> str:         return "설문조사"
-    def icon_path(self) -> str:     return _icon("Survey_Icon.png")
+    def label(self) -> str:          return "설문조사"
+    def icon_path(self) -> str:      return _icon("Survey_Icon.png")
     def event_type_key(self) -> str: return "survey"
-
-
-@dataclass
-class GroupEvaluation(WindowEvent):
-    """조별과제 — 시작(optional) + 마감"""
-    def label(self) -> str:         return "조별과제"
-    def icon_path(self) -> str:     return _icon("Forum_Icon.png")
-    def event_type_key(self) -> str: return "group_evaluation"
-
 
 @dataclass
 class Forum(DeadlineEvent):
-    def label(self) -> str:         return "토론방"
-    def icon_path(self) -> str:     return _icon("Forum_Icon.png")
+    def label(self) -> str:          return "토론방"
+    def icon_path(self) -> str:      return _icon("Forum_Icon.png")
     def event_type_key(self) -> str: return "forum"
-
 
 @dataclass
 class Wiki(DeadlineEvent):
-    def label(self) -> str:         return "위키"
-    def icon_path(self) -> str:     return _icon("Wiki_Icon.png")
+    def label(self) -> str:          return "위키"
+    def icon_path(self) -> str:      return _icon("Wiki_Icon.png")
     def event_type_key(self) -> str: return "wiki"
-
 
 @dataclass
 class File(DeadlineEvent):
-    def label(self) -> str:         return "파일"
-    def icon_path(self) -> str:     return _icon("File_Icon.png")
+    def label(self) -> str:          return "파일"
+    def icon_path(self) -> str:      return _icon("File_Icon.png")
     def event_type_key(self) -> str: return "file"
-
 
 @dataclass
 class Folder(DeadlineEvent):
-    def label(self) -> str:         return "폴더"
-    def icon_path(self) -> str:     return _icon("Folder_Icon.png")
+    def label(self) -> str:          return "폴더"
+    def icon_path(self) -> str:      return _icon("Folder_Icon.png")
     def event_type_key(self) -> str: return "folder"
-
 
 @dataclass
 class Label(DeadlineEvent):
-    def label(self) -> str:         return "개요"
-    def icon_path(self) -> str:     return _icon("Label_Icon.png")
+    def label(self) -> str:          return "개요"
+    def icon_path(self) -> str:      return _icon("Label_Icon.png")
     def event_type_key(self) -> str: return "label"
-
 
 @dataclass
 class URLLink(DeadlineEvent):
-    def label(self) -> str:         return "URL링크"
-    def icon_path(self) -> str:     return _icon("URL_Icon.png")
+    def label(self) -> str:          return "URL링크"
+    def icon_path(self) -> str:      return _icon("URL_Icon.png")
     def event_type_key(self) -> str: return "url"
 
+# 구 WindowEvent alias (JSON 호환)
+WindowEvent = DeadlineEvent
 
-# ─── Lookup maps ──────────────────────────────────────────────
+
+# ═══════════════════════════════════════════════════════════════
+# 학사 Event (AcademicEvent) — 학과·학교 주관 행사
+# ═══════════════════════════════════════════════════════════════
+
+# 학사 프리셋: RangeTiming 사용 (구간이 있는 행사)
+@dataclass
+class Seminar(RangeEvent):
+    """학사 — 세미나"""
+    def __post_init__(self): self.domain = "academic"
+    def label(self) -> str:          return "세미나"
+    def icon_path(self) -> str:      return _icon("Board_Icon.png")
+    def event_type_key(self) -> str: return "seminar"
+
 
 @dataclass
-class Exam(PeriodEvent):
-    """시험 — 교시 기반 (Quiz와 동일한 입력 방식)"""
-    def label(self) -> str:         return "시험"
-    def icon_path(self) -> str:     return _icon("Label_Icon.png")
-    def event_type_key(self) -> str: return "exam"
+class Exhibition(RangeEvent):
+    """학사 — 전시·박람회"""
+    def __post_init__(self): self.domain = "academic"
+    def label(self) -> str:          return "전시/박람회"
+    def icon_path(self) -> str:      return _icon("Poll_Icon.png")
+    def event_type_key(self) -> str: return "exhibition"
 
+
+@dataclass
+class DeptCompetition(DeadlineEvent):
+    """학사 — 학과/교내 대회 (접수 마감 있음)"""
+    def __post_init__(self): self.domain = "academic"
+    def label(self) -> str:          return "교내 대회"
+    def icon_path(self) -> str:      return _icon("Quiz_Icon.png")
+    def event_type_key(self) -> str: return "dept_competition"
+
+
+@dataclass
+class OfficialEvent(RangeEvent):
+    """학사 — 학사 공식 행사 (오리엔테이션, 졸업식 등)"""
+    def __post_init__(self): self.domain = "academic"
+    def label(self) -> str:          return "학사 행사"
+    def icon_path(self) -> str:      return _icon("Survey_Icon.png")
+    def event_type_key(self) -> str: return "official_event"
+
+
+# ═══════════════════════════════════════════════════════════════
+# 개인 Event (PersonalEvent) — 본인 학습·생활 일정
+# ═══════════════════════════════════════════════════════════════
+
+@dataclass
+class ExamPrep(RangeEvent):
+    """개인 — 시험 공부"""
+    def __post_init__(self): self.domain = "personal"
+    def label(self) -> str:          return "시험 공부"
+    def icon_path(self) -> str:      return _icon("Label_Icon.png")
+    def event_type_key(self) -> str: return "exam_prep"
+
+
+@dataclass
+class QuizPrep(RangeEvent):
+    """개인 — 퀴즈 대비"""
+    def __post_init__(self): self.domain = "personal"
+    def label(self) -> str:          return "퀴즈 대비"
+    def icon_path(self) -> str:      return _icon("Quiz_Icon.png")
+    def event_type_key(self) -> str: return "quiz_prep"
+
+
+@dataclass
+class SelfStudy(RangeEvent):
+    """개인 — 자습"""
+    def __post_init__(self): self.domain = "personal"
+    def label(self) -> str:          return "자습"
+    def icon_path(self) -> str:      return _icon("VOD_Icon.png")
+    def event_type_key(self) -> str: return "self_study"
+
+
+@dataclass
+class Club(RangeEvent):
+    """개인 — 동아리"""
+    def __post_init__(self): self.domain = "personal"
+    def label(self) -> str:          return "동아리"
+    def icon_path(self) -> str:      return _icon("Forum_Icon.png")
+    def event_type_key(self) -> str: return "club"
+
+
+@dataclass
+class Volunteer(RangeEvent):
+    """개인 — 봉사"""
+    def __post_init__(self): self.domain = "personal"
+    def label(self) -> str:          return "봉사"
+    def icon_path(self) -> str:      return _icon("Survey_Icon.png")
+    def event_type_key(self) -> str: return "volunteer"
+
+
+@dataclass
+class ExtCompetition(RangeEvent):
+    """개인 — 외부 대회 (코딩 대회 등)"""
+    def __post_init__(self): self.domain = "personal"
+    def label(self) -> str:          return "외부 대회"
+    def icon_path(self) -> str:      return _icon("Assignment_Icon.png")
+    def event_type_key(self) -> str: return "ext_competition"
+
+
+@dataclass
+class PersonalCustom(RangeEvent):
+    """개인 — 기타 (자유)"""
+    def __post_init__(self): self.domain = "personal"
+    def label(self) -> str:          return "기타"
+    def icon_path(self) -> str:      return _icon("Folder_Icon.png")
+    def event_type_key(self) -> str: return "personal_custom"
+
+
+# ─── 전체 타입 맵 ──────────────────────────────────────────────
 
 EVENT_TYPE_MAP: dict[str, type[Event]] = {
-    # ── UI에 표시되는 6개 ──
-    "vod":               VOD,
-    "zoom_meeting":      ZoomMeeting,
-    "assignment":        Assignment,
-    "group_evaluation":  GroupEvaluation,
-    "quiz":              Quiz,
-    "exam":              Exam,
-    # ── (UI 미표시) ──
-    "poll":              Poll,
-    "board":             Board,
-    "survey":            Survey,
-    "forum":             Forum,
-    "wiki":              Wiki,
-    "file":              File,
-    "folder":            Folder,
-    "label":             Label,
-    "url":               URLLink,
+    # ── 수업 6종 (UI 표시) ──
+    "vod":              VOD,
+    "zoom_meeting":     ZoomMeeting,
+    "assignment":       Assignment,
+    "team_project":     TeamProject,
+    "quiz":             Quiz,
+    "exam":             Exam,
+    # ── 수업 레거시 (데이터 호환) ──
+    "group_evaluation": TeamProject,
+    "poll":             Poll,
+    "board":            Board,
+    "survey":           Survey,
+    "forum":            Forum,
+    "wiki":             Wiki,
+    "file":             File,
+    "folder":           Folder,
+    "label":            Label,
+    "url":              URLLink,
+    # ── 학사 ──
+    "seminar":          Seminar,
+    "exhibition":       Exhibition,
+    "dept_competition": DeptCompetition,
+    "official_event":   OfficialEvent,
+    # ── 개인 ──
+    "exam_prep":        ExamPrep,
+    "quiz_prep":        QuizPrep,
+    "self_study":       SelfStudy,
+    "club":             Club,
+    "volunteer":        Volunteer,
+    "ext_competition":  ExtCompetition,
+    "personal_custom":  PersonalCustom,
 }
 
 _DUMMY: dict[str, Event] = {
-    k: cls(id="", course_code="", title="") for k, cls in EVENT_TYPE_MAP.items()
+    k: cls(id="", title="") for k, cls in EVENT_TYPE_MAP.items()
 }
-EVENT_LABEL_MAP: dict[str, str] = {k: v.label() for k, v in _DUMMY.items()}
-EVENT_ICON_MAP: dict[str, str]  = {k: v.icon_path() for k, v in _DUMMY.items()}
+EVENT_LABEL_MAP: dict[str, str] = {k: v.label()     for k, v in _DUMMY.items()}
+EVENT_ICON_MAP:  dict[str, str] = {k: v.icon_path() for k, v in _DUMMY.items()}
 
-# UI에 표시할 6개 (순서 고정)
-VISIBLE_TYPES: list[str] = [
-    "vod", "zoom_meeting", "assignment", "group_evaluation", "quiz", "exam",
+# 도메인별 표시 타입 (순서 고정)
+COURSE_TYPES: list[str] = [
+    "vod", "zoom_meeting", "assignment", "team_project", "quiz", "exam",
+]
+ACADEMIC_TYPES: list[str] = [
+    "seminar", "exhibition", "dept_competition", "official_event",
+]
+PERSONAL_TYPES: list[str] = [
+    "exam_prep", "quiz_prep", "self_study",
+    "club", "volunteer", "ext_competition", "personal_custom",
 ]
 
-# 전체 타입 (데이터 호환 포함)
-ALL_TYPES_ORDER: list[str] = [
-    "vod", "zoom_meeting", "assignment", "group_evaluation", "quiz", "exam",
-    "poll", "board", "survey", "forum", "wiki", "file", "folder", "label", "url",
-]
+# 하위 호환
+VISIBLE_TYPES: list[str] = COURSE_TYPES
+
+ALL_TYPES_ORDER: list[str] = (
+    COURSE_TYPES + ACADEMIC_TYPES + PERSONAL_TYPES
+    + ["poll", "board", "survey", "forum", "wiki", "file", "folder", "label", "url"]
+)
+
+DOMAIN_LABEL: dict[str, str] = {
+    "course":   "수업",
+    "academic": "학사",
+    "personal": "개인",
+}
 
 
 def event_from_dict(d: dict) -> Optional[Event]:
@@ -301,7 +455,13 @@ def event_from_dict(d: dict) -> Optional[Event]:
         return None
     cls = EVENT_TYPE_MAP[event_type]
     valid = {f.name for f in dc_fields(cls)}
-    return cls(**{k: v for k, v in data.items() if k in valid})
+    kwargs = {k: v for k, v in data.items() if k in valid}
+    # legacy 데이터에 domain 필드가 없으면 __post_init__ 이 기본값을 채운다
+    obj = cls(**kwargs)
+    # JSON에 domain이 명시돼 있으면 덮어쓴다 (개인/학사 복원)
+    if "domain" in data and "domain" in valid:
+        obj.domain = data["domain"]
+    return obj
 
 
 # ─── Rule hierarchy ───────────────────────────────────────────
@@ -311,8 +471,8 @@ class Rule:
     id: str
     course_code: str
     event_type: str
-    title_template: str         # e.g. "{week}주차 {label}"
-    start_date: str             # ISO date "YYYY-MM-DD"
+    title_template: str
+    start_date: str
     end_date: str
     enabled: bool = True
 
@@ -340,11 +500,10 @@ class Rule:
 
 @dataclass
 class WindowCycleRule(Rule):
-    """과제·동영상: open 요일+교시 → due 요일+주차offset+시각"""
-    open_weekday: int = 0       # 0=월
-    open_period: int = 1        # 1~8
+    open_weekday: int = 0
+    open_period: int = 1
     due_weekday: int = 0
-    due_week_offset: int = 0    # 0=같은주, 1=다음주
+    due_week_offset: int = 0
     due_time: str = "23:59"
 
     def rule_pattern(self) -> str: return "window_cycle"
@@ -363,7 +522,6 @@ class WindowCycleRule(Rule):
 
 @dataclass
 class PeriodWeeklyRule(Rule):
-    """퀴즈·화상강의: 매주 요일+교시구간"""
     occurrence_weekday: int = 0
     start_period: int = 1
     end_period: int = 1
@@ -382,7 +540,6 @@ class PeriodWeeklyRule(Rule):
 
 @dataclass
 class DueWeeklyRule(Rule):
-    """마감형: 매주 요일+시각"""
     due_weekday: int = 0
     due_time: str = "23:59"
 
