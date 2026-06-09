@@ -8,9 +8,12 @@ import streamlit as st
 
 from core.models import (
     EVENT_TYPE_MAP, EVENT_LABEL_MAP, EVENT_ICON_MAP,
-    ALL_TYPES_ORDER, COURSE_TYPES, ACADEMIC_TYPES, PERSONAL_TYPES, DOMAIN_LABEL,
-    PeriodEvent, DeadlineEvent, RangeEvent,
+    ALL_TYPES_ORDER, COURSE_TYPES, ACADEMIC_TYPES, PERSONAL_TYPES,
+    PERSONAL_OPEN_TYPES, DOMAIN_LABEL,
+    PeriodEvent, DeadlineEvent, RangeEvent, OpenEvent,
+    is_timed, timed_auto_done,
 )
+
 from core.period import PERIOD_LABELS, periods_to_range
 from core.storage import (
     load, add_event, update_event, remove_event,
@@ -18,7 +21,7 @@ from core.storage import (
     get_course_map,
 )
 from core.dday import calc_dday, dday_label, dday_color
-from core.progress import progress_color, progress_bar_html
+from core.progress import progress_color, progress_bar_html, is_todo
 from core.rule_engine import week_number
 
 
@@ -35,11 +38,13 @@ _RANGE_TYPES = {
     "exam_prep", "quiz_prep", "self_study",
     "club", "volunteer", "ext_competition", "personal_custom",
 }
+_OPEN_TYPES = set(PERSONAL_OPEN_TYPES)   # 개인 오픈형 — start_at 만 입력
 
 
 def _timing_mode(type_key: str) -> str:
     if type_key in _PERIOD_TYPES:   return "period"
     if type_key in _DEADLINE_TYPES: return "deadline"
+    if type_key in _OPEN_TYPES:     return "open"
     return "range"
 
 
@@ -241,6 +246,27 @@ def _range_inputs(form_key: str, dv: dict) -> dict:
     return {"start_at": s_dt.isoformat(), "end_at": e_dt.isoformat()}
 
 
+def _open_inputs(form_key: str, dv: dict) -> dict:
+    """OpenTiming 입력 폼 — 시작 날짜·시각만 입력, 마감 없음"""
+    st.markdown("**시작 날짜 / 시각**")
+    c1, c2 = st.columns(2)
+    with c1:
+        s_date = st.date_input(
+            "시작일",
+            value=datetime.fromisoformat(dv["start_at"]).date() if dv.get("start_at") else date.today(),
+            key=f"{form_key}_open_s_date",
+        )
+    with c2:
+        s_time = st.time_input(
+            "시작 시각",
+            value=datetime.fromisoformat(dv["start_at"]).time() if dv.get("start_at") else time(9, 0),
+            key=f"{form_key}_open_s_time",
+        )
+    s_dt = datetime.combine(s_date, s_time)
+    st.info(f"시작: {s_dt.strftime('%Y/%m/%d %H:%M')}  |  마감 없음 (오픈형)")
+    return {"start_at": s_dt.isoformat()}
+
+
 # ─── 도메인별 폼 ──────────────────────────────────────────────
 
 def _course_form(courses: list, form_key: str, dv: dict) -> dict | None:
@@ -297,7 +323,7 @@ def _academic_form(form_key: str, dv: dict) -> dict | None:
     st.divider()
     title = st.text_input("제목 *", value=dv.get("title", ""), key=f"{form_key}_title")
     organizer = st.text_input("주관 (선택)", value=dv.get("description", ""), key=f"{form_key}_organizer",
-                              placeholder="예: 컴퓨터공학과, 취업지원센터")
+                              placeholder="예: 소프트웨어학부")
     desc  = st.text_area("메모", value="", height=60, key=f"{form_key}_desc")
 
     result: dict = {
@@ -318,12 +344,44 @@ def _academic_form(form_key: str, dv: dict) -> dict | None:
 
 
 def _personal_form(form_key: str, dv: dict) -> dict | None:
-    """개인 일정 입력 폼"""
+    """개인 일정 입력 폼 — 구간형 / 오픈형 탭 분리"""
+    RANGE_LIST = [t for t in PERSONAL_TYPES if t not in PERSONAL_OPEN_TYPES]
+    OPEN_LIST  = list(PERSONAL_OPEN_TYPES)
+
+    # 기존 편집 이벤트의 타이밍을 기준으로 초기 탭 결정
     default_type = dv.get("event_type", "self_study")
-    if default_type not in PERSONAL_TYPES:
-        default_type = "self_study"
-    type_key = _preset_selector(form_key, PERSONAL_TYPES, default_type)
-    mode     = _timing_mode(type_key)
+    initial_tab  = 1 if default_type in PERSONAL_OPEN_TYPES else 0
+
+    tab_range, tab_open = st.tabs(["📅 구간형 (시작 ~ 종료)", "🔓 오픈형 (시작만)"])
+
+    # ── 구간형 탭 ─────────────────────────────────────
+    with tab_range:
+        r_default = default_type if default_type in RANGE_LIST else "self_study"
+        r_type_key = _preset_selector(f"{form_key}_r", RANGE_LIST, r_default)
+
+    # ── 오픈형 탭 ─────────────────────────────────────
+    with tab_open:
+        o_default = default_type if default_type in OPEN_LIST else "personal_goal"
+        o_type_key = _preset_selector(f"{form_key}_o", OPEN_LIST, o_default)
+
+    # 활성 탭을 세션 스테이트로 추적
+    tab_key = f"{form_key}_tab"
+    if tab_key not in st.session_state:
+        st.session_state[tab_key] = initial_tab
+
+    # 두 탭의 type 변경을 감지해 활성 탭 갱신
+    prev_r = st.session_state.get(f"{form_key}_r_prev", r_type_key)
+    prev_o = st.session_state.get(f"{form_key}_o_prev", o_type_key)
+    if r_type_key != prev_r:
+        st.session_state[tab_key] = 0
+    if o_type_key != prev_o:
+        st.session_state[tab_key] = 1
+    st.session_state[f"{form_key}_r_prev"] = r_type_key
+    st.session_state[f"{form_key}_o_prev"] = o_type_key
+
+    active_tab = st.session_state[tab_key]
+    type_key   = o_type_key if active_tab == 1 else r_type_key
+    mode       = _timing_mode(type_key)
 
     st.divider()
     title = st.text_input("제목 *", value=dv.get("title", ""), key=f"{form_key}_title")
@@ -338,8 +396,8 @@ def _personal_form(form_key: str, dv: dict) -> dict | None:
     }
     st.divider()
 
-    if mode == "deadline":
-        result.update(_deadline_inputs(form_key, dv, show_open=True))
+    if mode == "open":
+        result.update(_open_inputs(form_key, dv))
     else:
         result.update(_range_inputs(form_key, dv))
 
@@ -369,6 +427,8 @@ def _validate(form_data: dict | None) -> str | None:
         return "마감일을 입력하세요."
     if mode == "range" and not form_data.get("start_at"):
         return "시작 시각을 입력하세요."
+    if mode == "open" and not form_data.get("start_at"):
+        return "시작 날짜·시각을 입력하세요."
     return None
 
 
@@ -453,14 +513,17 @@ def _edit_event_dialog(event_id: str, courses: list) -> None:
 
 def _time_caption(event) -> str:
     if isinstance(event, PeriodEvent) and event.start_at:
-        p_info = (
-            f" ({event.start_period}~{event.end_period}교시)"
-            if event.start_period and event.end_period else ""
-        )
-        return (
-            f"{datetime.fromisoformat(event.start_at).strftime('%m/%d(%a) %H:%M')}"
-            f" ~ {datetime.fromisoformat(event.end_at).strftime('%H:%M')}{p_info}"
-        )
+        if event.start_period and event.end_period:
+            sp, ep = event.start_period, event.end_period
+            p_info = (
+                f" ({sp}교시)" if sp == ep
+                else f" ({sp}\\~{ep} 교시)"   # \\~ → 마크다운 subscript 방지
+            )
+        else:
+            p_info = ""
+        s = datetime.fromisoformat(event.start_at).strftime('%m/%d(%a) %H:%M')
+        e = datetime.fromisoformat(event.end_at).strftime('%H:%M') if event.end_at else "?"
+        return f"{s}–{e}{p_info}"
     if isinstance(event, RangeEvent) and event.start_at:
         s = datetime.fromisoformat(event.start_at).strftime('%m/%d %H:%M')
         e = datetime.fromisoformat(event.end_at).strftime('%m/%d %H:%M') if event.end_at else "?"
@@ -488,7 +551,10 @@ def _render_event_row(event, course_map: dict, today: date, courses: list) -> No
         badge_label = DOMAIN_LABEL.get(domain, domain)
         badge_color = domain_colors.get(domain, "#888")
 
-    dday = calc_dday(event, today)
+    dday       = calc_dday(event, today)
+    timed      = is_timed(event)
+    auto_done  = timed_auto_done(event)
+    visual_done = event.completed or auto_done
 
     with st.container():
         col_icon, col_info, col_meta = st.columns([0.5, 6, 2.5])
@@ -497,7 +563,7 @@ def _render_event_row(event, course_map: dict, today: date, courses: list) -> No
             st.image(event.icon_path(), width=28)
 
         with col_info:
-            done_style = "text-decoration:line-through; color:#aaa;" if event.completed else ""
+            done_style = "text-decoration:line-through; color:#aaa;" if visual_done else ""
             st.markdown(
                 f'<span style="font-size:12px; color:{badge_color}; font-weight:bold;">[{badge_label}]</span> '
                 f'<span style="{done_style}">{event.title}</span>',
@@ -508,29 +574,41 @@ def _render_event_row(event, course_map: dict, today: date, courses: list) -> No
                 st.caption(cap)
             if event.source == "rule":
                 st.caption("🔄 규칙에서 생성된 일정")
-            st.markdown(progress_bar_html(event.progress, height=4), unsafe_allow_html=True)
+            if not timed:
+                st.markdown(progress_bar_html(event.progress, height=4), unsafe_allow_html=True)
 
         with col_meta:
-            if dday is not None:
-                bc = dday_color(dday)
+            if timed:
+                badge_text  = "자동 완료" if auto_done else "진행 중"
+                badge_color2 = "#00ACC1" if auto_done else "#F39C12"
                 st.markdown(
-                    f'<span style="background:{bc}; color:white; padding:2px 8px; '
+                    f'<span style="background:{badge_color2}; color:white; padding:2px 8px; '
                     f'border-radius:12px; font-size:12px; font-weight:bold;">'
-                    f'{dday_label(dday)}</span>',
+                    f'{badge_text}</span>',
                     unsafe_allow_html=True,
                 )
-            st.checkbox(
-                "완료", value=event.completed,
-                key=f"done_{event.id}",
-                on_change=_cb_done, args=(event.id,),
-            )
+            else:
+                if dday is not None:
+                    bc = dday_color(dday)
+                    st.markdown(
+                        f'<span style="background:{bc}; color:white; padding:2px 8px; '
+                        f'border-radius:12px; font-size:12px; font-weight:bold;">'
+                        f'{dday_label(dday)}</span>',
+                        unsafe_allow_html=True,
+                    )
+                st.checkbox(
+                    "완료", value=event.completed,
+                    key=f"done_{event.id}",
+                    on_change=_cb_done, args=(event.id,),
+                )
 
-        st.slider(
-            "진행률", 0, 100, event.progress,
-            key=f"prog_{event.id}", format="%d%%",
-            label_visibility="collapsed",
-            on_change=_cb_prog, args=(event.id,),
-        )
+        if not timed:
+            st.slider(
+                "진행률", 0, 100, event.progress,
+                key=f"prog_{event.id}", format="%d%%",
+                label_visibility="collapsed",
+                on_change=_cb_prog, args=(event.id,),
+            )
 
         c1, c2 = st.columns([1, 1])
         with c1:
@@ -563,14 +641,14 @@ def _open_filter_dialog() -> None:
     ss = st.session_state
     ss["dlg_filter_courses"] = list(ss.get("list_filter_courses", []))
     ss["dlg_filter_types"]   = list(ss.get("list_filter_types", []))
-    ss["dlg_filter_done"]    = ss.get("list_filter_done", "미완료")
+    ss["dlg_filter_done"]    = ss.get("list_filter_done", "TODO")
     ss["dlg_filter_domain"]  = ss.get("list_filter_domain", "전체")
 
 
 def _reset_dlg_filters() -> None:
     st.session_state["dlg_filter_courses"] = []
     st.session_state["dlg_filter_types"]   = []
-    st.session_state["dlg_filter_done"]    = "미완료"
+    st.session_state["dlg_filter_done"]    = "TODO"
     st.session_state["dlg_filter_domain"]  = "전체"
 
 
@@ -599,9 +677,14 @@ def _filter_dialog(course_map: dict) -> None:
         )
     st.radio(
         "표시 범위",
-        ["미완료", "완료", "전체"],
+        ["TODO", "완료", "전체"],
         horizontal=True,
         key="dlg_filter_done",
+        captions=[
+            "현재 진행 가능한 일정만 — 오픈 전·마감 경과·완료 항목 제외",
+            "완료·자동 완료된 일정",
+            "모든 일정",
+        ],
     )
     st.divider()
     bc1, bc2 = st.columns(2)
@@ -612,7 +695,7 @@ def _filter_dialog(course_map: dict) -> None:
             ss = st.session_state
             ss["list_filter_courses"] = list(ss.get("dlg_filter_courses", []))
             ss["list_filter_types"]   = list(ss.get("dlg_filter_types", []))
-            ss["list_filter_done"]    = ss.get("dlg_filter_done", "미완료")
+            ss["list_filter_done"]    = ss.get("dlg_filter_done", "TODO")
             ss["list_filter_domain"]  = ss.get("dlg_filter_domain", "전체")
             st.rerun()
 
@@ -621,7 +704,7 @@ def _filter_dialog(course_map: dict) -> None:
 
 def run():
     for key, default in [
-        ("list_filter_done",   "미완료"),
+        ("list_filter_done",    "TODO"),
         ("list_filter_courses", []),
         ("list_filter_types",   []),
         ("list_filter_domain",  "전체"),
@@ -634,7 +717,7 @@ def run():
     _any_filter = bool(
         st.session_state["list_filter_courses"]
         or st.session_state["list_filter_types"]
-        or st.session_state["list_filter_done"] != "미완료"
+        or st.session_state["list_filter_done"] != "TODO"
         or st.session_state["list_filter_domain"] != "전체"
     )
 
@@ -675,10 +758,12 @@ def run():
         events = [e for e in events if e.course_code in sel_courses]
     if sel_types:
         events = [e for e in events if e.event_type_key() in sel_types]
-    if sel_done == "미완료":
-        events = [e for e in events if not e.completed]
+    if sel_done == "TODO":
+        now    = datetime.now()
+        events = [e for e in events if is_todo(e, now)]
     elif sel_done == "완료":
-        events = [e for e in events if e.completed]
+        now    = datetime.now()
+        events = [e for e in events if e.completed or timed_auto_done(e)]
 
     events = sorted(events, key=lambda e: (e.sort_at() or datetime.max))
 

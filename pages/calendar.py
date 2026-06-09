@@ -10,8 +10,9 @@ from typing import Optional
 import streamlit as st
 
 from core.models import (
-    Event, PeriodEvent, DeadlineEvent, RangeEvent,
+    Event, PeriodEvent, DeadlineEvent, RangeEvent, OpenEvent,
     EVENT_LABEL_MAP, EVENT_ICON_MAP, DOMAIN_LABEL,
+    is_timed, timed_auto_done,
 )
 from core.storage import load, get_course_map, set_event_progress, toggle_event_completed
 
@@ -119,6 +120,10 @@ def _event_date_range(event: Event) -> tuple[Optional[date], Optional[date]]:
         s = datetime.fromisoformat(event.start_at).date() if event.start_at else None
         e = datetime.fromisoformat(event.end_at).date()   if event.end_at   else s
         return s, e
+    if isinstance(event, OpenEvent):
+        # 오픈형: 시작일만 있으므로 해당 날 하루짜리로 표시
+        s = datetime.fromisoformat(event.start_at).date() if event.start_at else None
+        return s, s
     if isinstance(event, RangeEvent):
         s = datetime.fromisoformat(event.start_at).date() if event.start_at else None
         e = datetime.fromisoformat(event.end_at).date()   if event.end_at   else s
@@ -278,31 +283,45 @@ def _render_day_detail(d: date, events: list[Event], course_map: dict, today: da
             ccolor = domain_colors.get(domain, "#888")
         dday   = calc_dday(evt, today)
 
+        timed     = is_timed(evt)
+        auto_done = timed_auto_done(evt)
+
         with st.container(border=True):
             c1, c2 = st.columns([0.5, 8])
             with c1:
                 st.image(evt.icon_path(), width=28)
             with c2:
+                done_style = "text-decoration:line-through; color:#aaa;" if (evt.completed or auto_done) else ""
                 st.markdown(
-                    f'<span style="color:{ccolor}; font-weight:bold;">[{cname}]</span> {evt.title}',
+                    f'<span style="color:{ccolor}; font-weight:bold;">[{cname}]</span> '
+                    f'<span style="{done_style}">{evt.title}</span>',
                     unsafe_allow_html=True,
                 )
-                if dday is not None:
+                if timed:
+                    badge_text   = "자동 완료" if auto_done else "진행 중"
+                    badge_color2 = "#00ACC1"  if auto_done else "#F39C12"
+                    st.markdown(
+                        f'<span style="background:{badge_color2}; color:white; padding:2px 8px; '
+                        f'border-radius:12px; font-size:11px; font-weight:bold;">{badge_text}</span>',
+                        unsafe_allow_html=True,
+                    )
+                elif dday is not None:
                     st.caption(dday_label(dday))
 
-            st.markdown(progress_bar_html(evt.progress, height=5), unsafe_allow_html=True)
-            st.slider(
-                "진행률", 0, 100, evt.progress,
-                key=f"cal_det_prog_{evt.id}_{d}",
-                format="%d%%",
-                label_visibility="collapsed",
-                on_change=_cb_cal_prog, args=(evt.id, str(d)),
-            )
-            st.checkbox(
-                "완료", value=evt.completed,
-                key=f"cal_det_done_{evt.id}_{d}",
-                on_change=_cb_cal_done, args=(evt.id, str(d)),
-            )
+            if not timed:
+                st.markdown(progress_bar_html(evt.progress, height=5), unsafe_allow_html=True)
+                st.slider(
+                    "진행률", 0, 100, evt.progress,
+                    key=f"cal_det_prog_{evt.id}_{d}",
+                    format="%d%%",
+                    label_visibility="collapsed",
+                    on_change=_cb_cal_prog, args=(evt.id, str(d)),
+                )
+                st.checkbox(
+                    "완료", value=evt.completed,
+                    key=f"cal_det_done_{evt.id}_{d}",
+                    on_change=_cb_cal_done, args=(evt.id, str(d)),
+                )
 
 
 # ─── Main ─────────────────────────────────────────────────────

@@ -20,7 +20,7 @@ def run():
     with st.expander("과목 추가", expanded=len(data.courses) == 0):
         code_input = st.text_input(
             "학정번호",
-            placeholder="예: SWE3007",
+            placeholder="예: YHX1001",
             key="course_code_input",
         ).strip().upper()
 
