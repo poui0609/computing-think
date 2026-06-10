@@ -1,4 +1,4 @@
-"""core/storage.py — schedules.json CRUD"""
+
 from __future__ import annotations
 
 import json
@@ -89,9 +89,6 @@ def _next_color(courses: list[Course]) -> str:
             return color
     return COURSE_PALETTE[len(courses) % len(COURSE_PALETTE)]
 
-
-# ─── Course ───────────────────────────────────────────────────
-
 def add_course(code: str, name: str) -> Course:
     data = load()
     if any(c.code == code for c in data.courses):
@@ -119,7 +116,6 @@ def remove_course(code: str) -> None:
     data = load()
     data.courses = [c for c in data.courses if c.code != code]
     data.rules   = [r for r in data.rules   if r.course_code != code]
-    # 수업 이벤트만 삭제 (학사·개인 이벤트는 course_code가 없으므로 보존)
     data.events  = [e for e in data.events  if e.course_code != code]
     save(data)
 
@@ -129,8 +125,6 @@ def get_course_map(data: Optional[ScheduleData] = None) -> dict[str, Course]:
         data = load()
     return {c.code: c for c in data.courses}
 
-
-# ─── Event ────────────────────────────────────────────────────
 
 def add_event(event: Event) -> Event:
     data = load()
@@ -227,8 +221,6 @@ def get_overdue(today: date) -> list[Event]:
     result.sort(key=lambda e: (get_sort_at(e) or datetime.max))
     return result
 
-
-# ─── Rule ─────────────────────────────────────────────────────
 
 def add_rule(rule: Rule) -> Rule:
     data = load()
