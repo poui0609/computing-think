@@ -1,4 +1,3 @@
-"""pages/calendar.py — 월간 캘린더 + 이벤트 바 렌더링"""
 from __future__ import annotations
 
 import base64
@@ -16,9 +15,6 @@ from core.models import (
 )
 from core.storage import load, get_course_map, set_event_progress, toggle_event_completed
 
-
-# ─── 캘린더 상세 on_change 콜백 ───────────────────────────────
-
 def _cb_cal_done(event_id: str, d: str) -> None:
     done = st.session_state[f"cal_det_done_{event_id}_{d}"]
     evt  = toggle_event_completed(event_id, done)
@@ -32,9 +28,6 @@ def _cb_cal_prog(event_id: str, d: str) -> None:
 from core.dday import calc_dday, dday_label
 from core.progress import progress_color, progress_bar_html, course_week_progress
 from core.rule_engine import week_number as compute_week_number
-
-
-# ─── Icon helper ──────────────────────────────────────────────
 
 _icon_b64_cache: dict[str, str] = {}
 
@@ -57,8 +50,6 @@ def _img_tag(icon_path: str, size: int = 12) -> str:
     return "■"
 
 
-# ─── Event bar segment HTML ───────────────────────────────────
-
 def _bar_segment(
     event: Event,
     cell_date: date,
@@ -67,12 +58,10 @@ def _bar_segment(
     color: str,
     show_title: bool = False,
 ) -> str:
-    """Single-row HTML for one event bar segment in a calendar cell."""
     is_start  = cell_date == bar_start
     is_end    = cell_date == bar_end
     is_single = is_start and is_end
 
-    # Border radius for the colored line
     if is_single:
         radius = "3px"
     elif is_start:
@@ -82,14 +71,11 @@ def _bar_segment(
     else:
         radius = "0"
 
-    # Dots
     left_dot  = f'<span style="color:{color}; font-size:8px; flex-shrink:0; line-height:1;">●</span>' if is_start else ""
     right_dot = f'<span style="color:{color}; font-size:8px; flex-shrink:0; line-height:1;">●</span>' if is_end else ""
 
-    # Icon (show on start/single cell)
     icon_part = _img_tag(event.icon_path(), 11) if (is_start or is_single) else ""
 
-    # Title (show on start/single cell only)
     title = event.title
     title_short = (title[:9] + "…") if len(title) > 10 else title
     completed_style = "text-decoration:line-through; opacity:0.5;" if event.completed else ""
@@ -100,7 +86,6 @@ def _bar_segment(
         else ""
     )
 
-    # Central line
     line = (
         f'<div style="flex:1; height:4px; background:{color}; '
         f'border-radius:{radius}; opacity:{"0.4" if event.completed else "1"};"></div>'
@@ -115,13 +100,11 @@ def _bar_segment(
 
 
 def _event_date_range(event: Event) -> tuple[Optional[date], Optional[date]]:
-    """Returns (bar_start_date, bar_end_date) for this event."""
     if isinstance(event, PeriodEvent):
         s = datetime.fromisoformat(event.start_at).date() if event.start_at else None
         e = datetime.fromisoformat(event.end_at).date()   if event.end_at   else s
         return s, e
     if isinstance(event, OpenEvent):
-        # 오픈형: 시작일만 있으므로 해당 날 하루짜리로 표시
         s = datetime.fromisoformat(event.start_at).date() if event.start_at else None
         return s, s
     if isinstance(event, RangeEvent):
@@ -151,9 +134,6 @@ def _events_for_date(events: list[Event], d: date) -> list[Event]:
                 result.append(e)
     return result
 
-
-# ─── Calendar rendering ───────────────────────────────────────
-
 _DAY_NAMES = ["월", "화", "수", "목", "금", "토", "일"]
 _CELL_STYLE = (
     "min-height:90px; border:1px solid #e0e0e0; padding:4px; "
@@ -179,8 +159,6 @@ def _render_week_row(
     show_week_progress: bool,
 ) -> None:
     sem_start = date.fromisoformat(data.semester["start_date"])
-
-    # Week label column
     label_col, *day_cols = st.columns([0.7, *[1]*7])
     with label_col:
         st.markdown(
@@ -246,8 +224,6 @@ def _render_week_row(
                 f'</div>',
                 unsafe_allow_html=True,
             )
-
-            # 이벤트 있는 날에만 상세 버튼 표시
             if day_events:
                 btn_label = "▲ 닫기" if is_selected else f"📋 {len(day_events)}건"
                 if st.button(
@@ -324,8 +300,6 @@ def _render_day_detail(d: date, events: list[Event], course_map: dict, today: da
                 )
 
 
-# ─── Main ─────────────────────────────────────────────────────
-
 def run():
     st.title("캘린더")
 
@@ -336,8 +310,6 @@ def run():
     if not data.courses:
         st.info("수강 과목을 먼저 등록하세요. → **수강 과목** 페이지")
         return
-
-    # Month navigation
     if "cal_year" not in st.session_state:
         st.session_state["cal_year"]  = today.year
     if "cal_month" not in st.session_state:
@@ -371,7 +343,6 @@ def run():
             st.session_state.update({"cal_year": today.year, "cal_month": today.month})
             st.rerun()
 
-    # ── Filters ───────────────────────────────────────────────
     with st.expander("필터"):
         fc1, fc2, fc3 = st.columns(3)
         with fc1:
@@ -407,7 +378,6 @@ def run():
     elif sel_done == "완료만":
         events = [e for e in events if e.completed]
 
-    # ── Day header ────────────────────────────────────────────
     header_cols = st.columns([0.7, *[1]*7])
     with header_cols[0]:
         st.markdown('<div style="text-align:center; font-size:11px; color:#999;"></div>', unsafe_allow_html=True)
@@ -419,7 +389,6 @@ def run():
                 unsafe_allow_html=True,
             )
 
-    # ── 선택된 날짜 상세 패널 (캘린더 위) ────────────────────
     if "cal_selected_date" in st.session_state:
         sel_d = st.session_state["cal_selected_date"]
         with st.container(border=True):
@@ -435,7 +404,6 @@ def run():
             _render_day_detail(sel_d, events, course_map, today)
         st.divider()
 
-    # ── Calendar grid ─────────────────────────────────────────
     month_weeks = calendar.monthcalendar(yr, mo)
     sem_start   = date.fromisoformat(data.semester["start_date"])
 

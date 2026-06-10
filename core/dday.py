@@ -1,4 +1,3 @@
-"""core/dday.py — D-day 계산 및 정렬"""
 from datetime import date, datetime
 from typing import Optional
 
@@ -25,7 +24,6 @@ def dday_label(dday: int) -> str:
 
 
 def dday_color(dday: Optional[int]) -> str:
-    """임박도에 따른 배지 배경색"""
     if dday is None:
         return "#95A5A6"
     if dday < 0:

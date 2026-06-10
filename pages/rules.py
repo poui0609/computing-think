@@ -15,7 +15,6 @@ from core.period import PERIOD_LABELS
 from core.storage import load, add_rule, remove_rule, update_rule, get_course_map
 from core.rule_engine import expand_rule, regenerate_rule, rule_preview
 
-# Event types grouped by timing mode (visible + legacy)
 _PERIOD_TYPES   = {"quiz", "zoom_meeting", "exam"}
 _WINDOW_TYPES   = {"assignment", "vod", "team_project"}
 _DEADLINE_TYPES = {
@@ -70,7 +69,6 @@ def _rule_form(
         st.warning("수강 과목을 먼저 등록하세요.")
         return None
 
-    # Course
     course_opts = [c.code for c in courses]
     course_code = st.selectbox(
         "과목",
@@ -81,7 +79,6 @@ def _rule_form(
         key=f"{form_key}_course",
     )
 
-    # Event type (UI에서는 VISIBLE_TYPES 6개만 표시)
     _ev_default = dv.get("event_type", "assignment")
     if _ev_default not in VISIBLE_TYPES:
         _ev_default = "assignment"
@@ -93,7 +90,6 @@ def _rule_form(
         key=f"{form_key}_type",
     )
 
-    # Pattern (auto-suggested)
     suggested = _default_pattern(type_key)
     pattern_opts = list(_PATTERN_LABELS.keys())
     pattern = st.selectbox(
@@ -104,7 +100,6 @@ def _rule_form(
         key=f"{form_key}_pattern",
     )
 
-    # Title template
     title_template = st.text_input(
         "제목 템플릿",
         value=dv.get("title_template", f"{{week}}주차 {EVENT_LABEL_MAP[type_key]}"),
@@ -112,7 +107,6 @@ def _rule_form(
         key=f"{form_key}_title_tpl",
     )
 
-    # Date range
     data = load()
     sem = data.semester
     c1, c2 = st.columns(2)
@@ -140,7 +134,6 @@ def _rule_form(
         "end_date":        end_date.isoformat(),
     }
 
-    # Pattern-specific fields
     if pattern == "window_cycle":
         st.markdown("**생성 시점 (매주 열리는 날)**")
         c1, c2 = st.columns(2)
@@ -229,7 +222,7 @@ def _rule_form(
             "end_period":         end_period,
         })
 
-    else:  # due_weekly
+    else:
         st.markdown("**매주 마감 요일 및 시각**")
         c1, c2 = st.columns(2)
         with c1:
@@ -252,7 +245,6 @@ def _rule_form(
             "due_time":    due_time_str,
         })
 
-    # Preview
     preview_rule = _build_rule_obj("preview_rule_id", result)
     if preview_rule:
         sem_start = load().semester["start_date"]
@@ -311,7 +303,6 @@ def run():
 
     course_map = get_course_map(data)
 
-    # Edit mode
     if "editing_rule_id" in st.session_state:
         rule_id = st.session_state["editing_rule_id"]
         rule = next((r for r in data.rules if r.id == rule_id), None)
@@ -330,7 +321,6 @@ def run():
                     elif form_data["start_date"] >= form_data["end_date"]:
                         st.error("종료일은 시작일보다 이후여야 합니다.")
                     else:
-                        # update rule fields
                         new_rule = _build_rule_obj(rule_id, form_data)
                         if new_rule:
                             from core.storage import save as ssave

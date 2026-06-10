@@ -1,4 +1,3 @@
-"""pages/events.py — 일정 CRUD + 3도메인(수업/학사/개인) 지원"""
 from __future__ import annotations
 
 import uuid
@@ -25,8 +24,6 @@ from core.progress import progress_color, progress_bar_html, is_todo
 from core.rule_engine import week_number
 
 
-# ─── Timing 분류 ──────────────────────────────────────────────
-
 _PERIOD_TYPES  = {"quiz", "zoom_meeting", "exam"}
 _DEADLINE_TYPES = {
     "assignment", "vod", "team_project",
@@ -38,7 +35,7 @@ _RANGE_TYPES = {
     "exam_prep", "quiz_prep", "self_study",
     "club", "volunteer", "ext_competition", "personal_custom",
 }
-_OPEN_TYPES = set(PERSONAL_OPEN_TYPES)   # 개인 오픈형 — start_at 만 입력
+_OPEN_TYPES = set(PERSONAL_OPEN_TYPES)
 
 
 def _timing_mode(type_key: str) -> str:
@@ -47,8 +44,6 @@ def _timing_mode(type_key: str) -> str:
     if type_key in _OPEN_TYPES:     return "open"
     return "range"
 
-
-# ─── on_change 콜백 ───────────────────────────────────────────
 
 def _cb_done(event_id: str) -> None:
     done = st.session_state[f"done_{event_id}"]
@@ -68,8 +63,6 @@ def _week_num(event) -> int | None:
     sa = event.sort_at()
     return week_number(sa.date(), sem_start) if sa else None
 
-
-# ─── 수업 타입 선택 그리드 (1행 6열) ──────────────────────────
 
 def _set_type(ss_key: str, key: str) -> None:
     st.session_state[ss_key] = key
@@ -99,7 +92,6 @@ def _course_type_selector(form_key: str, default_key: str = "vod") -> str:
 
 
 def _preset_selector(form_key: str, preset_list: list[str], default_key: str) -> str:
-    """학사/개인 프리셋 선택 (2열 그리드)"""
     ss_key = f"{form_key}_selected_type"
     if ss_key not in st.session_state or st.session_state[ss_key] not in preset_list:
         st.session_state[ss_key] = default_key
@@ -124,11 +116,7 @@ def _preset_selector(form_key: str, preset_list: list[str], default_key: str) ->
                     )
     return st.session_state[ss_key]
 
-
-# ─── 시간 입력 공통 헬퍼 ─────────────────────────────────────
-
 def _period_inputs(form_key: str, dv: dict) -> dict:
-    """PeriodTiming 입력 폼 → result dict"""
     st.markdown("**날짜 및 교시**")
     d_val = (
         datetime.fromisoformat(dv["start_at"]).date()
@@ -165,7 +153,6 @@ def _period_inputs(form_key: str, dv: dict) -> dict:
 
 
 def _deadline_inputs(form_key: str, dv: dict, show_open: bool = True) -> dict:
-    """DeadlineTiming 입력 폼 → result dict"""
     result = {}
     if show_open:
         use_open = st.checkbox(
@@ -212,7 +199,6 @@ def _deadline_inputs(form_key: str, dv: dict, show_open: bool = True) -> dict:
 
 
 def _range_inputs(form_key: str, dv: dict) -> dict:
-    """RangeTiming 입력 폼 → result dict"""
     st.markdown("**시간 구간**")
     c1, c2 = st.columns(2)
     with c1:
@@ -247,7 +233,6 @@ def _range_inputs(form_key: str, dv: dict) -> dict:
 
 
 def _open_inputs(form_key: str, dv: dict) -> dict:
-    """OpenTiming 입력 폼 — 시작 날짜·시각만 입력, 마감 없음"""
     st.markdown("**시작 날짜 / 시각**")
     c1, c2 = st.columns(2)
     with c1:
@@ -266,11 +251,7 @@ def _open_inputs(form_key: str, dv: dict) -> dict:
     st.info(f"시작: {s_dt.strftime('%Y/%m/%d %H:%M')}  |  마감 없음 (오픈형)")
     return {"start_at": s_dt.isoformat()}
 
-
-# ─── 도메인별 폼 ──────────────────────────────────────────────
-
 def _course_form(courses: list, form_key: str, dv: dict) -> dict | None:
-    """수업 일정 입력 폼"""
     if not courses:
         st.warning("수강 과목을 먼저 등록해 주세요.")
         return None
@@ -313,7 +294,6 @@ def _course_form(courses: list, form_key: str, dv: dict) -> dict | None:
 
 
 def _academic_form(form_key: str, dv: dict) -> dict | None:
-    """학사 일정 입력 폼"""
     default_type = dv.get("event_type", "seminar")
     if default_type not in ACADEMIC_TYPES:
         default_type = "seminar"
@@ -344,32 +324,24 @@ def _academic_form(form_key: str, dv: dict) -> dict | None:
 
 
 def _personal_form(form_key: str, dv: dict) -> dict | None:
-    """개인 일정 입력 폼 — 구간형 / 오픈형 탭 분리"""
     RANGE_LIST = [t for t in PERSONAL_TYPES if t not in PERSONAL_OPEN_TYPES]
     OPEN_LIST  = list(PERSONAL_OPEN_TYPES)
 
-    # 기존 편집 이벤트의 타이밍을 기준으로 초기 탭 결정
     default_type = dv.get("event_type", "self_study")
     initial_tab  = 1 if default_type in PERSONAL_OPEN_TYPES else 0
 
     tab_range, tab_open = st.tabs(["📅 구간형 (시작 ~ 종료)", "🔓 오픈형 (시작만)"])
-
-    # ── 구간형 탭 ─────────────────────────────────────
     with tab_range:
         r_default = default_type if default_type in RANGE_LIST else "self_study"
         r_type_key = _preset_selector(f"{form_key}_r", RANGE_LIST, r_default)
-
-    # ── 오픈형 탭 ─────────────────────────────────────
     with tab_open:
         o_default = default_type if default_type in OPEN_LIST else "personal_goal"
         o_type_key = _preset_selector(f"{form_key}_o", OPEN_LIST, o_default)
 
-    # 활성 탭을 세션 스테이트로 추적
     tab_key = f"{form_key}_tab"
     if tab_key not in st.session_state:
         st.session_state[tab_key] = initial_tab
 
-    # 두 탭의 type 변경을 감지해 활성 탭 갱신
     prev_r = st.session_state.get(f"{form_key}_r_prev", r_type_key)
     prev_o = st.session_state.get(f"{form_key}_o_prev", o_type_key)
     if r_type_key != prev_r:
@@ -403,9 +375,6 @@ def _personal_form(form_key: str, dv: dict) -> dict | None:
 
     return result
 
-
-# ─── 저장 헬퍼 ────────────────────────────────────────────────
-
 def _save_new_event(form_data: dict) -> None:
     from dataclasses import fields as dc_fields
     type_key = form_data.pop("event_type")
@@ -417,7 +386,6 @@ def _save_new_event(form_data: dict) -> None:
 
 
 def _validate(form_data: dict | None) -> str | None:
-    """None이면 OK, str이면 에러 메시지"""
     if not form_data or not form_data.get("title", "").strip():
         return "제목을 입력하세요."
     mode = _timing_mode(form_data.get("event_type", ""))
@@ -431,8 +399,6 @@ def _validate(form_data: dict | None) -> str | None:
         return "시작 날짜·시각을 입력하세요."
     return None
 
-
-# ─── 일정 추가 팝업 ──────────────────────────────────────────
 
 @st.dialog("일정 추가", width="large")
 def _add_event_dialog(courses: list) -> None:
@@ -473,8 +439,6 @@ def _add_event_dialog(courses: list) -> None:
                 st.rerun()
 
 
-# ─── 수정 팝업 ────────────────────────────────────────────────
-
 @st.dialog("일정 수정", width="large")
 def _edit_event_dialog(event_id: str, courses: list) -> None:
     data  = load()
@@ -508,8 +472,6 @@ def _edit_event_dialog(event_id: str, courses: list) -> None:
             st.toast("수정 완료!", icon="✅")
             st.rerun()
 
-
-# ─── 일정 목록 행 ─────────────────────────────────────────────
 
 def _time_caption(event) -> str:
     if isinstance(event, PeriodEvent) and event.start_at:
@@ -635,8 +597,6 @@ def _render_event_row(event, course_map: dict, today: date, courses: list) -> No
     st.divider()
 
 
-# ─── 필터 팝업 ────────────────────────────────────────────────
-
 def _open_filter_dialog() -> None:
     ss = st.session_state
     ss["dlg_filter_courses"] = list(ss.get("list_filter_courses", []))
@@ -700,8 +660,6 @@ def _filter_dialog(course_map: dict) -> None:
             st.rerun()
 
 
-# ─── Main ─────────────────────────────────────────────────────
-
 def run():
     for key, default in [
         ("list_filter_done",    "TODO"),
@@ -742,7 +700,6 @@ def run():
     course_map = get_course_map(data)
     today      = date.today()
 
-    # ── 필터 적용 ─────────────────────────────────────────────
     sel_courses = st.session_state["list_filter_courses"]
     sel_types   = st.session_state["list_filter_types"]
     sel_done    = st.session_state["list_filter_done"]

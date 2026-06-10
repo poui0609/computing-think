@@ -1,17 +1,3 @@
-"""
-core/models.py
-
-도메인 3분류
-  CourseEvent  (수업)  — course_code 필수
-  AcademicEvent(학사)  — 학과·학교 주관 행사
-  PersonalEvent(개인)  — 본인 학습·생활 일정
-
-TimingSpec 4종 (믹스인)
-  PeriodEvent   — 교시 기반 (start_at, end_at, start_period, end_period)
-  DeadlineEvent — 마감 기반 (open_at?, due_at)
-  RangeEvent    — 자유 구간 (start_at, end_at)
-  OpenEvent     — 오픈형   (start_at만, 마감 없음)
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field

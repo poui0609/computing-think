@@ -1,4 +1,3 @@
-"""pages/courses.py — 수강 과목 등록/관리"""
 import re
 import streamlit as st
 
@@ -16,7 +15,6 @@ def run():
     mapping = load_course_mapping()
     data = load()
 
-    # ── 과목 추가 폼 ─────────────────────────────────────────
     with st.expander("과목 추가", expanded=len(data.courses) == 0):
         code_input = st.text_input(
             "학정번호",
@@ -51,7 +49,6 @@ def run():
 
     st.divider()
 
-    # ── 등록된 과목 목록 ─────────────────────────────────────
     data = load()
     if not data.courses:
         st.info("등록된 과목이 없습니다. 위에서 과목을 추가하세요.")
@@ -94,7 +91,6 @@ def run():
                         st.rerun()
         st.divider()
 
-    # ── 학기 설정 ────────────────────────────────────────────
     with st.expander("학기 설정"):
         data = load()
         sem = data.semester

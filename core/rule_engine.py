@@ -1,4 +1,3 @@
-"""core/rule_engine.py — 반복 규칙 확장 엔진"""
 from __future__ import annotations
 
 import uuid
@@ -31,7 +30,6 @@ def _make_title(template: str, week_num: int, event_type: str) -> str:
 
 
 def expand_rule(rule: Rule) -> list[Event]:
-    """규칙 하나에서 학기 내 모든 이벤트를 생성합니다."""
     from core.storage import load
     data = load()
 
@@ -141,7 +139,6 @@ def expand_rule(rule: Rule) -> list[Event]:
 
 
 def regenerate_rule(rule_id: str) -> list[Event]:
-    """미완료 연결 이벤트를 삭제하고 규칙을 재확장합니다."""
     from core.storage import load, save, add_event
     data = load()
 
@@ -162,7 +159,6 @@ def regenerate_rule(rule_id: str) -> list[Event]:
 
 
 def rule_preview(rule: Rule, semester_start: str) -> Optional[str]:
-    """규칙의 첫 주차 샘플 문자열을 반환합니다 (UI 미리보기용)"""
     try:
         start = date.fromisoformat(rule.start_date)
         sem_start = date.fromisoformat(semester_start)

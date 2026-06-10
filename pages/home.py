@@ -1,4 +1,3 @@
-"""pages/home.py — 홈 · D-day + 주차 Progress"""
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -10,8 +9,6 @@ from core.storage import (
     get_course_map, current_week_number,
 )
 
-
-# ─── 진행률/완료 on_change 콜백 ────────────────────────────────
 
 def _cb_home_done(event_id: str) -> None:
     done = st.session_state[f"home_done_{event_id}"]
@@ -94,7 +91,6 @@ def _event_card(event, course_map: dict, today: date) -> None:
                 st.markdown(progress_bar_html(event.progress, height=5), unsafe_allow_html=True)
         with col_badge:
             if timed:
-                # 자동 완료 배지 — 수동 컨트롤 없음
                 badge_text  = "자동 완료" if auto_done else "진행 중"
                 badge_color = "#00ACC1"  if auto_done else "#F39C12"
                 st.markdown(
@@ -141,7 +137,6 @@ def run():
         st.info("수강 과목을 먼저 등록하세요. → **수강 과목** 페이지")
         return
 
-    # ── 주차 Progress ─────────────────────────────────────────
     cur_week = current_week_number(today)
     max_week = (
         (date.fromisoformat(data.semester["end_date"]) -
@@ -174,7 +169,6 @@ def run():
 
     st.divider()
 
-    # Filter
     with st.expander("필터"):
         fc1, fc2 = st.columns(2)
         with fc1:
@@ -211,7 +205,6 @@ def run():
         key=lambda e: e.sort_at() or datetime.max,
     )
 
-    # ── D-0 ~ D-3 ────────────────────────────────────────────
     urgent = _filter([e for e in all_future if (d := calc_dday(e, today)) is not None and d <= 3])
 
     if urgent:
@@ -219,7 +212,6 @@ def run():
         for evt in urgent:
             _event_card(evt, course_map, today)
 
-    # ── D-4 이상 ─────────────────────────────────────────────
     upcoming = _filter([e for e in all_future if (d := calc_dday(e, today)) is not None and d > 3])
 
     if upcoming:
@@ -235,7 +227,6 @@ def run():
     if not urgent and not upcoming:
         st.success("임박한 미완료 일정이 없습니다!")
 
-    # ── 지난 미완료 ───────────────────────────────────────────
     past = _filter(overdue)
     if past:
         with st.expander(f"지난 미완료 일정 ({len(past)}건)", expanded=False):

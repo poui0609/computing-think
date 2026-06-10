@@ -1,13 +1,9 @@
-"""core/period.py — 교시표 및 변환 함수
-1교시 09:00~10:00, 2교시 10:00~11:00, ..., 15교시 23:00~00:00(다음날)
-"""
+
 from datetime import date, datetime, time, timedelta
 
-# 1~14교시: 시작 = (8+N):00, 종료 = (9+N):00
-# 15교시:   시작 = 23:00,    종료 = 자정 (00:00 다음날 → timedelta로 처리)
 PERIOD_TABLE: dict[int, tuple[time, time | None]] = {
     **{n: (time(8 + n, 0), time(9 + n, 0)) for n in range(1, 15)},
-    15: (time(23, 0), None),   # None = 자정(00:00 다음날)
+    15: (time(23, 0), None),
 }
 
 PERIOD_LABELS: dict[int, str] = {
@@ -23,7 +19,6 @@ def period_start(d: date, period: int) -> datetime:
 def period_end(d: date, period: int) -> datetime:
     start_time, end_time = PERIOD_TABLE[period]
     if end_time is None:
-        # 15교시 종료: 다음날 00:00
         return datetime.combine(d, time(0, 0)) + timedelta(days=1)
     return datetime.combine(d, end_time)
 

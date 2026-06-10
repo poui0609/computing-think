@@ -1,4 +1,3 @@
-"""pages/io_page.py — JSON 가져오기/내보내기 + ICS 내보내기"""
 from __future__ import annotations
 
 import streamlit as st
@@ -15,7 +14,6 @@ def run():
 
     data = load()
 
-    # ── JSON ──────────────────────────────────────────────────
     with tab_json:
         st.subheader("JSON 내보내기")
         st.caption("모든 과목·규칙·일정을 JSON 파일로 저장합니다.")
@@ -72,7 +70,6 @@ def run():
             except Exception as e:
                 st.error(f"파일 파싱 오류: {e}")
 
-    # ── ICS ───────────────────────────────────────────────────
     with tab_ics:
         st.subheader("ICS 내보내기")
         st.caption(
@@ -99,8 +96,6 @@ def run():
             )
 
         excl_completed = st.checkbox("완료된 일정 제외", value=True, key="ics_excl_done")
-
-        # Count preview
         preview_events = data.events
         if ics_courses:
             preview_events = [e for e in preview_events if e.course_code in ics_courses]

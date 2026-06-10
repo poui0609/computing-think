@@ -1,4 +1,3 @@
-"""core/io.py — JSON 가져오기/내보내기 + ICS 내보내기"""
 from __future__ import annotations
 
 import json
@@ -12,8 +11,6 @@ from core.models import (
 )
 from core.storage import ScheduleData, load, save
 
-
-# ─── JSON ─────────────────────────────────────────────────────
 
 def export_json(data: Optional[ScheduleData] = None) -> bytes:
     if data is None:
@@ -41,10 +38,6 @@ def import_json(
     raw_bytes: bytes,
     mode: str = "replace",
 ) -> tuple[ScheduleData, str]:
-    """
-    mode: "replace" | "merge"
-    Returns (new_data, summary_message)
-    """
     raw = json.loads(raw_bytes.decode("utf-8"))
     ok, msg = validate_schema(raw)
     if not ok:
@@ -65,7 +58,6 @@ def import_json(
             f"규칙 {len(imported.rules)}개, 일정 {len(imported.events)}개"
         )
 
-    # merge: upsert by id
     existing = load()
 
     existing_course_codes = {c.code for c in existing.courses}
@@ -98,9 +90,6 @@ def import_json(
 
     save(existing)
     return existing, f"병합 완료: 신규 {added}건 추가, {updated}건 갱신"
-
-
-# ─── ICS 내보내기 ─────────────────────────────────────────────
 
 def _dt_to_ical(dt_str: Optional[str]) -> Optional[str]:
     if not dt_str:
